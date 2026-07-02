@@ -5829,6 +5829,44 @@ function saveRedes(){
 // ============================================================
 // VENDEDORES - ACTUALIZAR TABLA CON EDICIÓN COMPLETA
 // ============================================================
+function VEND_agregar(){
+  const input = document.getElementById('vend-input');
+  const nombre = input?.value?.trim();
+
+  if(!nombre){
+    alert('⚠️ Escribe el nombre del vendedor');
+    return;
+  }
+
+  if(vendedores[nombre]){
+    alert('⚠️ Este vendedor ya existe');
+    return;
+  }
+
+  vendedores[nombre] = {contacto: '', cuentas: []};
+  input.value = '';
+
+  if(typeof persist !== 'undefined' && persist.saveNow){
+    persist.saveNow();
+  }
+
+  renderVnd();
+  actualizarSelectVendedores();
+}
+
+function VEND_limpiar(){
+  if(!confirm('⚠️ ¿Eliminar TODOS los vendedores? Esta acción no se puede deshacer.')) return;
+
+  Object.keys(vendedores).forEach(k => delete vendedores[k]);
+
+  if(typeof persist !== 'undefined' && persist.saveNow){
+    persist.saveNow();
+  }
+
+  renderVnd();
+  actualizarSelectVendedores();
+}
+
 function VEND_actualizar(){
   // 1. Cargar del localStorage
   VEND = JSON.parse(localStorage.getItem('VEND_data') || '{}');
