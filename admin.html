@@ -5838,32 +5838,42 @@ function VEND_agregar(){
     return;
   }
 
-  if(vendedores[nombre]){
+  // Cargar VEND actual desde localStorage (misma fuente que usa la tabla)
+  VEND = JSON.parse(localStorage.getItem('VEND_data') || '{}');
+
+  if(VEND[nombre]){
     alert('⚠️ Este vendedor ya existe');
     return;
   }
 
+  VEND[nombre] = {contacto: '', cuentas: []};
+  localStorage.setItem('VEND_data', JSON.stringify(VEND));
+
+  // También reflejar en 'vendedores' por compatibilidad con otras secciones
   vendedores[nombre] = {contacto: '', cuentas: []};
+
   input.value = '';
 
   if(typeof persist !== 'undefined' && persist.saveNow){
     persist.saveNow();
   }
 
-  renderVnd();
+  VEND_actualizar();
   actualizarSelectVendedores();
 }
 
 function VEND_limpiar(){
   if(!confirm('⚠️ ¿Eliminar TODOS los vendedores? Esta acción no se puede deshacer.')) return;
 
+  VEND = {};
+  localStorage.setItem('VEND_data', JSON.stringify(VEND));
   Object.keys(vendedores).forEach(k => delete vendedores[k]);
 
   if(typeof persist !== 'undefined' && persist.saveNow){
     persist.saveNow();
   }
 
-  renderVnd();
+  VEND_actualizar();
   actualizarSelectVendedores();
 }
 
