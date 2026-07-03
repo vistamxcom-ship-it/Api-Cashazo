@@ -1,19 +1,19 @@
 {
   "name": "cashazo-admin-sync",
   "version": "1.0.0",
-  "description": "CASHAZO Admin v16 - Sincronización con Supabase (sin cambios al HTML)",
+  "description": "CASHAZO Admin - Sincronizacion en vivo con Supabase",
   "main": "server-admin-sync.js",
   "scripts": {
-    "start": "node server-admin-sync.js",
-    "dev": "node server-admin-sync.js"
+    "start": "node server-admin-sync.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "@supabase/supabase-js": "^2.38.0",
-    "dotenv": "^16.0.3"
-  },
-  "engines": {
-    "node": ">=16.0.0"
+    "dotenv": "^16.0.3",
+    "ws": "^8.16.0"
   }
 }

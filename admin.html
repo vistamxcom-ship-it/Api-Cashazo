@@ -6166,5 +6166,65 @@ accs.forEach(a => {
 try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
 
 console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés externos)');</script>
+<script>
+// ============================================================
+// SINCRONIZACIÓN EN VIVO CON SUPABASE (vía /sync en este mismo servidor)
+// ============================================================
+(function(){
+  let sincronizando = false;
+
+  async function pullFromServer(){
+    if(sincronizando) return;
+    sincronizando = true;
+    try{
+      const r = await fetch('/sync');
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const d = await r.json();
+
+      let huboCambios = false;
+
+      if(d.accs && Array.isArray(d.accs) && d.accs.length){
+        const actualStr = JSON.stringify(accs);
+        const nuevoStr = JSON.stringify(d.accs);
+        if(actualStr !== nuevoStr){
+          accs = d.accs;
+          huboCambios = true;
+        }
+      }
+      if(d.vendedores && typeof d.vendedores === 'object'){
+        vendedores = d.vendedores;
+      }
+
+      if(huboCambios){
+        try{ localStorage.setItem(persist.dataKey, JSON.stringify({accounts:accs, vendedores})); }catch(e){}
+        if(typeof renderAll === 'function') renderAll();
+        console.log('🔄 Cambios recibidos desde Supabase');
+      }
+
+      const dot=document.getElementById('srvDot');
+      if(dot){ dot.className='srv-dot on'; dot.title='Sincronizado con Supabase'; }
+    }catch(e){
+      console.warn('⚠️ No se pudo sincronizar con Supabase:', e.message);
+      const dot=document.getElementById('srvDot');
+      if(dot){ dot.className='srv-dot off'; dot.title='Sin conexión a Supabase'; }
+    } finally {
+      sincronizando = false;
+    }
+  }
+
+  window.addEventListener('load', function(){
+    // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
+    setTimeout(pullFromServer, 800);
+    // Jala cambios de otros dispositivos cada 15s (sincronización "en vivo")
+    setInterval(pullFromServer, 15000);
+    // Respaldo: fuerza guardado cada 15s por si algún cambio no disparó saveNow()
+    setInterval(function(){
+      if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
+    }, 15000);
+  });
+
+  console.log('✅ Sincronización en vivo con Supabase activada (cada 15s)');
+})();
+</script>
 </body>
 </html>
