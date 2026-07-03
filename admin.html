@@ -737,7 +737,7 @@ function showPane(id, btn){
   if(p){ p.classList.add('on'); }
   if(btn) btn.classList.add('on');
   prevPane=curPane; curPane=id;
-  const r={res:renderRes,cta:renderCta,cal:renderCal,mxn:renderMXN,usd:renderUSD,soc:renderSoc,vnd:renderVnd,act:renderAct,hoy:renderHoy,msg:renderMsg,cif:renderCif,cfg:renderCfg};
+  const r={res:renderRes,cta:renderCta,cal:renderCal,mxn:renderMXN,usd:renderUSD,soc:renderSoc,vnd:renderVnd,red:renderRedes,act:renderAct,hoy:renderHoy,msg:renderMsg,cif:renderCif,cfg:renderCfg};
   if(r[id]) r[id]();
 }
 function renderAll(){
@@ -749,6 +749,8 @@ function renderAll(){
   renderVnd();
   // 🔧 SIEMPRE actualizar CALENDARIO aunque no estés mirándolo (para que pagos se vean verdes)
   renderCal();
+  // 🔧 SIEMPRE actualizar REDES aunque no estés mirándolo (para que las cuentas registradas no desaparezcan)
+  if(typeof renderRedes==='function') renderRedes();
   // Re-renderizar el pane activo si no es res
   const r={cal:renderCal,mxn:renderMXN,usd:renderUSD,soc:renderSoc,vnd:renderVnd,red:renderRedes,act:renderAct,hoy:renderHoy,msg:renderMsg,cif:renderCif,bot:renderBot};
   if(r[curPane]) r[curPane]();
@@ -1521,7 +1523,7 @@ function makeTable(list, showSplit){
 }
 
 function renderMXN(){
-  const l=accs.filter(a=>a.cur==='MXN'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend);
+  const l=accs.filter(a=>a.cur==='MXN'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&!cuentaVinculadaARed(a));
   const cap=l.reduce((s,a)=>s+a.amt,0);const int=l.reduce((s,a)=>s+interest(a),0);
   document.getElementById('pane-mxn').innerHTML=`
     <div class="mrow">
@@ -1533,10 +1535,10 @@ function renderMXN(){
     <input class="srch" placeholder="Buscar cliente..." oninput="filterMXN(this.value)" id="srch-mxn">
     <div id="tbl-mxn">${makeTable(l,false)}</div>`;
 }
-function filterMXN(q){ const l=accs.filter(a=>a.cur==='MXN'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&a.name.toLowerCase().includes(q.toLowerCase())); document.getElementById('tbl-mxn').innerHTML=makeTable(l,false); }
+function filterMXN(q){ const l=accs.filter(a=>a.cur==='MXN'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&!cuentaVinculadaARed(a)&&a.name.toLowerCase().includes(q.toLowerCase())); document.getElementById('tbl-mxn').innerHTML=makeTable(l,false); }
 
 function renderUSD(){
-  const l=accs.filter(a=>a.cur==='USD'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend);
+  const l=accs.filter(a=>a.cur==='USD'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&!cuentaVinculadaARed(a));
   const cap=l.reduce((s,a)=>s+a.amt,0);const int=l.reduce((s,a)=>s+interest(a),0);
   document.getElementById('pane-usd').innerHTML=`
     <div class="mrow">
@@ -1548,7 +1550,7 @@ function renderUSD(){
     <input class="srch" placeholder="Buscar cliente..." oninput="filterUSD(this.value)" id="srch-usd">
     <div id="tbl-usd">${makeTable(l,false)}</div>`;
 }
-function filterUSD(q){ const l=accs.filter(a=>a.cur==='USD'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&a.name.toLowerCase().includes(q.toLowerCase())); document.getElementById('tbl-usd').innerHTML=makeTable(l,false); }
+function filterUSD(q){ const l=accs.filter(a=>a.cur==='USD'&&(a.type==='normal'||a.type==='acuerdo')&&a.status!=='liquidado'&&!a.vend&&!cuentaVinculadaARed(a)&&a.name.toLowerCase().includes(q.toLowerCase())); document.getElementById('tbl-usd').innerHTML=makeTable(l,false); }
 
 function renderSoc(){
   const l=accs.filter(a=>a.type==='socio'&&a.status!=='liquidado');
@@ -3378,22 +3380,55 @@ function renderRedes(){
   loadRedes();
   
   // Generar filas de tabla CON CUENTAS VINCULADAS
+  let redReparada = false;
   const tablasHTML = REDES.length ? REDES.map((red, idx) => {
     const hayURL = red.enlace && red.enlace.startsWith('http');
     const hayTel = red.enlace && /\d{10,}/.test(red.enlace.replace(/\D/g, ''));
     const telNum = red.enlace ? red.enlace.replace(/\D/g, '') : '';
     
-    // Generar filas de cuentas vinculadas
-    const cuentasVinculadas = red.cuentas || [];
+    // Generar filas de cuentas vinculadas — usando datos EN VIVO de accs, no la foto congelada
+    // Busca por id; si no matchea (id viejo/desincronizado), busca por nombre exacto y repara la liga
+    const cuentasVinculadas = (red.cuentas || []).map(c => {
+      let live = accs.find(a => String(a.id) === String(c.id));
+      if (!live && c.nombre) {
+        live = accs.find(a => (a.name||'').trim().toLowerCase() === c.nombre.trim().toLowerCase());
+        if (live) {
+          // Reparar la liga: actualizar el id guardado en la red para que coincida con el real
+          c.id = live.id;
+          redReparada = true;
+        }
+      }
+      if (!live) return { ...c, _borrada: true };
+      if (!live.red) { live.red = red.nombre; redReparada = true; }
+      return {
+        id: live.id,
+        nombre: live.name,
+        monto: live.amt,
+        rate: live.rate,
+        ddp: live.ddp,
+        estado: live.status,
+        _interes: interest(live)
+      };
+    });
     const filaCuentas = cuentasVinculadas.length > 0 ? cuentasVinculadas.map((c, cidx) => {
+      if (c._borrada) {
+        return `
+        <tr style="background:var(--bg3);border-left:3px solid var(--red)">
+          <td colspan="5" style="padding:8px 12px;font-size:11px;color:var(--t3)">
+            ⚠️ Cuenta eliminada (${c.nombre||'sin nombre'})
+            <button class="br" style="font-size:8px;padding:2px 5px;margin-left:8px" onclick="eliminarCuentaDeRed(${idx},'${c.id}')">✕ Quitar</button>
+          </td>
+        </tr>`;
+      }
       return `
         <tr style="background:var(--bg3);border-left:3px solid var(--pur)">
           <td colspan="5" style="padding:0">
             <div style="padding:8px 12px;font-size:11px">
-              <div style="display:grid;grid-template-columns:150px 80px 80px 80px auto;gap:8px;align-items:center">
+              <div style="display:grid;grid-template-columns:150px 80px 80px 80px 80px auto;gap:8px;align-items:center">
                 <div><strong style="color:var(--grn)">📌 ${c.nombre}</strong></div>
                 <div style="font-size:10px;color:var(--t3)">💵 $${c.monto}</div>
                 <div style="font-size:10px;color:var(--t3)">📊 ${c.rate}%</div>
+                <div style="font-size:10px;color:var(--grn)">💰 $${c._interes}</div>
                 <div style="font-size:10px;color:var(--t3)">📅 ${c.ddp}</div>
                 <div style="display:flex;gap:4px;align-items:center">
                   <span style="font-size:9px;color:var(--t3)">✅ ${c.estado}</span>
@@ -3446,10 +3481,44 @@ function renderRedes(){
       ${filaCuentas}
     `;
   }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:2rem">Sin redes registradas</td></tr>';
+
+  if (redReparada) {
+    saveRedes();
+    if (typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
+    console.log('✅ Ligas de Redes reparadas automáticamente (id desincronizado corregido)');
+  }
   
+  // Calcular resumen de tarjetas (igual estilo que MXN) — usando datos VIVOS de accs, no snapshot viejo
+  // (usa los ids YA REPARADOS arriba, por eso este cálculo va DESPUÉS de construir tablasHTML)
+  const idsVinculados = new Set();
+  REDES.forEach(r=>(r.cuentas||[]).forEach(c=>idsVinculados.add(String(c.id))));
+  // Igual que MXN: no contar cuentas ya liquidadas
+  const cuentasVivasVinculadas = accs.filter(a=>idsVinculados.has(String(a.id))&&a.status!=='liquidado');
+  // Auto-reparar inconsistencias viejas: si está en una red pero a.red quedó vacío, corregirlo
+  let huboReparacion = false;
+  REDES.forEach(red => {
+    (red.cuentas||[]).forEach(c => {
+      const live = accs.find(a=>String(a.id)===String(c.id));
+      if(live && !live.red){ live.red = red.nombre; huboReparacion = true; }
+    });
+  });
+  if(huboReparacion && typeof persist!=='undefined' && persist.saveNow){ persist.saveNow(); }
+  const totalCuentasVinculadas = cuentasVivasVinculadas.length;
+  const montoVinculado = cuentasVivasVinculadas.reduce((s,a)=>s+(parseFloat(a.amt)||0),0);
+  const interesVinculado = cuentasVivasVinculadas.reduce((s,a)=>s+interest(a),0);
+  const activasVinculadas = cuentasVivasVinculadas.filter(a=>a.status==='activo').length;
+
   const redesHTML = `
     <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:1.5rem">// redes sociales y colaboradores — gestión centralizada</div>
-    
+
+    <div class="mrow">
+      <div class="mc"><div class="mc-l">Redes registradas</div><div class="mc-v">${REDES.length}</div></div>
+      <div class="mc"><div class="mc-l">Cuentas vinculadas</div><div class="mc-v">${totalCuentasVinculadas}</div></div>
+      <div class="mc"><div class="mc-l">Monto vinculado</div><div class="mc-v">${fm(montoVinculado,'MXN')}</div></div>
+      <div class="mc"><div class="mc-l">Interés a ganar</div><div class="mc-v" style="color:var(--grn)">${fm(interesVinculado,'MXN')}</div></div>
+      <div class="mc"><div class="mc-l">Activas</div><div class="mc-v">${activasVinculadas}</div></div>
+    </div>
+
     <!-- FORMULARIO AGREGAR -->
     <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:10px;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:1rem">➕ NUEVA RED</div>
@@ -5809,6 +5878,20 @@ function VEND_deleteCuenta(cuentaId) {
 // REDES SOCIALES - GESTIÓN DE REDES Y COLABORADORES
 // ============================================================
 let REDES = [];
+
+// Fuente de verdad real: ¿esta cuenta está vinculada a ALGUNA red? (aunque a.red esté vacío por inconsistencia vieja)
+function idsVinculadosARed(){
+  try {
+    const r = JSON.parse(localStorage.getItem('REDES_data') || '[]');
+    const set = new Set();
+    r.forEach(red => (red.cuentas||[]).forEach(c => set.add(String(c.id))));
+    return set;
+  } catch(e){ return new Set(); }
+}
+function cuentaVinculadaARed(a){
+  if(a.red) return true;
+  return idsVinculadosARed().has(String(a.id));
+}
 
 function loadRedes(){
   try {
