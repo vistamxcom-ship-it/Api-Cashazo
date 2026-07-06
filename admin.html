@@ -508,6 +508,9 @@ saveData() {
     };
     localStorage.setItem(this.dataKey, JSON.stringify(dataToSave));
     console.log('💾 Datos guardados en localStorage');
+
+    // 🔧 Asegurar que REDES esté cargado antes de mandarlo al servidor
+    if(typeof loadRedes === 'function') loadRedes();
     
     // 🔥 NUEVO: Guardar TAMBIÉN en el servidor (JSON)
     fetch('/sync', {
@@ -516,7 +519,8 @@ saveData() {
       body: JSON.stringify({
         accs: accs,
         vendedores: vendedores,
-        cfg: CFG
+        cfg: CFG,
+        redes: (typeof REDES !== 'undefined' ? REDES : [])
       })
     })
     .then(res => res.json())
@@ -5907,6 +5911,23 @@ function saveRedes(){
   } catch(e) {
     console.error('Error guardando redes:', e);
   }
+  // 🔧 NUEVO: empujar REDES al servidor de inmediato, no solo localStorage
+  try {
+    fetch('/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accs: (typeof accs !== 'undefined' ? accs : []),
+        vendedores: (typeof vendedores !== 'undefined' ? vendedores : {}),
+        cfg: (typeof CFG !== 'undefined' ? CFG : {}),
+        redes: REDES
+      })
+    }).then(r => r.json()).then(d => {
+      console.log('✅ REDES guardadas en servidor:', d);
+    }).catch(err => console.error('❌ Error guardando REDES en servidor:', err));
+  } catch(e) {
+    console.error('Error mandando redes al servidor:', e);
+  }
 }
 
 // ============================================================
@@ -6193,6 +6214,20 @@ console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés exte
       }
       if(d.vendedores && typeof d.vendedores === 'object'){
         vendedores = d.vendedores;
+      }
+
+      // 🔧 NUEVO: sincronizar REDES entre dispositivos (antes solo vivía en localStorage local)
+      if(d.redes && Array.isArray(d.redes)){
+        const actualRedesStr = localStorage.getItem('REDES_data') || '[]';
+        const nuevoRedesStr = JSON.stringify(d.redes);
+        if(actualRedesStr !== nuevoRedesStr){
+          REDES = d.redes;
+          try{ localStorage.setItem('REDES_data', nuevoRedesStr); }catch(e){}
+          if(typeof renderRedes === 'function') renderRedes();
+          if(typeof actualizarSelectRedes === 'function') actualizarSelectRedes();
+          huboCambios = true;
+          console.log('🔄 REDES actualizadas desde Supabase');
+        }
       }
 
       if(huboCambios){
