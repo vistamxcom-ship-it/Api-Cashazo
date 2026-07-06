@@ -742,6 +742,23 @@ function showPane(id, btn){
   if(btn) btn.classList.add('on');
   prevPane=curPane; curPane=id;
   const r={res:renderRes,cta:renderCta,cal:renderCal,mxn:renderMXN,usd:renderUSD,soc:renderSoc,vnd:renderVnd,red:renderRedes,act:renderAct,hoy:renderHoy,msg:renderMsg,cif:renderCif,cfg:renderCfg};
+
+  // 🔧 NUEVO: al entrar a REDES, jalar directo del servidor primero (no confiar
+  // en que el ciclo automático de 15s ya haya corrido o que localStorage esté al día)
+  if(id === 'red'){
+    fetch('/sync').then(r=>r.json()).then(d=>{
+      if(d && Array.isArray(d.redes) && d.redes.length > 0){
+        REDES = d.redes;
+        try{ localStorage.setItem('REDES_data', JSON.stringify(d.redes)); }catch(e){}
+      }
+      renderRedes();
+    }).catch(err=>{
+      console.error('❌ Error jalando REDES del servidor:', err);
+      renderRedes(); // aunque falle, mostrar lo que haya local
+    });
+    return;
+  }
+
   if(r[id]) r[id]();
 }
 function renderAll(){
