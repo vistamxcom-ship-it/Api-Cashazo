@@ -5882,6 +5882,10 @@ function VEND_deleteCuenta(cuentaId) {
 // REDES SOCIALES - GESTIÓN DE REDES Y COLABORADORES
 // ============================================================
 let REDES = [];
+// 🛡️ Cargar de inmediato desde localStorage para que REDES nunca arranque vacía
+// por accidente antes de que loadRedes() se llame en otro lado (evita que un
+// guardado automático temprano mande [] al servidor y borre datos reales)
+try { REDES = JSON.parse(localStorage.getItem('REDES_data') || '[]'); } catch(e) { REDES = []; }
 
 // Fuente de verdad real: ¿esta cuenta está vinculada a ALGUNA red? (aunque a.red esté vacío por inconsistencia vieja)
 function idsVinculadosARed(){
@@ -6220,13 +6224,19 @@ console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés exte
       if(d.redes && Array.isArray(d.redes)){
         const actualRedesStr = localStorage.getItem('REDES_data') || '[]';
         const nuevoRedesStr = JSON.stringify(d.redes);
-        if(actualRedesStr !== nuevoRedesStr){
+        // 🛡️ SEGURIDAD: nunca sobrescribir datos locales reales con un vacío que venga
+        // del servidor (evita condición de carrera que borraba REDES por completo)
+        const servidorVieneVacio = d.redes.length === 0;
+        const localTieneDatos = actualRedesStr !== '[]';
+        if(actualRedesStr !== nuevoRedesStr && !(servidorVieneVacio && localTieneDatos)){
           REDES = d.redes;
           try{ localStorage.setItem('REDES_data', nuevoRedesStr); }catch(e){}
           if(typeof renderRedes === 'function') renderRedes();
           if(typeof actualizarSelectRedes === 'function') actualizarSelectRedes();
           huboCambios = true;
           console.log('🔄 REDES actualizadas desde Supabase');
+        } else if(servidorVieneVacio && localTieneDatos){
+          console.log('🛡️ Ignorando REDES vacías del servidor para no borrar datos locales');
         }
       }
 
