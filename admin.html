@@ -1918,28 +1918,29 @@ _Cashazo — Siempre dispuestos a ayudarte_ ✨`;
 // ============================================================
 let srvConnected = false;
 
-// DESACTIVADO - No intenta conectar con servidor externo
-/*
 async function checkServer(){
   try{
-    const r=await fetch((CFG.serverUrl||'http://localhost:3000')+'/status',{signal:AbortSignal.timeout(2000)});
+    const r=await fetch((CFG.serverUrl||'http://localhost:3000')+'/api/health',{signal:AbortSignal.timeout(2000)});
     const d=await r.json();
-    srvConnected=true;
+    srvConnected = d.status === 'ok';
     const dot=document.getElementById('srvDot');
-    if(dot){dot.className='srv-dot on';dot.title=d.wa?'Bot WA conectado':'Bot conectado (WA pendiente)';}
-    
-    // ✨ Al conectarse, cargar clientes del servidor
-    cargarClientesDelServidor();
-    
+    if(dot){
+      dot.className = srvConnected ? 'srv-dot on' : 'srv-dot off';
+      dot.title = srvConnected ? '✅ Conectado a Supabase' : '❌ Servidor desconectado';
+    }
+    console.log('✅ Servidor:', srvConnected ? 'ONLINE' : 'OFFLINE');
     return d;
-  }catch{
+  }catch(err){
     srvConnected=false;
     const dot=document.getElementById('srvDot');
-    if(dot){dot.className='srv-dot off';dot.title='Bot desconectado — abre server.js';}
+    if(dot){
+      dot.className='srv-dot off';
+      dot.title='❌ No hay conexión al servidor';
+    }
+    console.warn('⚠️ checkServer error:', err.message);
     return null;
   }
 }
-*/
 
 async function syncToServer(){
   if(!srvConnected) return;
@@ -2969,24 +2970,52 @@ function openPago(id, from){
 }
 
 function guardarPago(id){
-  const a=accs.find(x=>x.id===parseInt(id));if(!a) return;
+  const a=accs.find(x=>String(x.id)===String(id));
+  if(!a) {
+    console.error('❌ Cliente no encontrado:', id);
+    alert('⚠️ Cliente no encontrado');
+    return;
+  }
+  
   const tipo=document.getElementById('ptipo').value;
   const monto=parseFloat(document.getElementById('pmonto').value)||0;
   const fecha=document.getElementById('pfecha').value;
+  
+  if(!monto || monto <= 0) {
+    alert('⚠️ El monto debe ser mayor a 0');
+    console.warn('⚠️ Intento de pago con monto inválido:', monto);
+    return;
+  }
+  
   if(!a.hist) a.hist=[];
   a.hist.push({tipo,monto,fecha});
+  
   if(tipo==='total') a.status='liquidado';
   if(a.type==='acuerdo'&&tipo==='parcial'){a.pagosMade=(a.pagosMade||0)+1;if(a.pagosMade>=a.totalPagos)a.status='liquidado';}
   if(tipo==='interes') a.meses=(a.meses||0)+1;
+  
   // GUARDAR A localStorage Y BD
   try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
-  if(typeof persist !== 'undefined') persist.saveNow();
-  backPane();renderAll();
+  
+  // FORZAR GUARDAR EN SUPABASE
+  if(persist && persist.saveNow) {
+    persist.saveNow();
+    console.log('✅ Pago registrado:', tipo, '→', monto, 'para', a.name);
+  } else {
+    console.warn('⚠️ persist.saveNow no disponible');
+  }
+  
+  backPane();
+  renderAll();
 }
 
 function regRapido(id, tipo){
   const idStr=String(id);
-  const a=accs.find(x=>String(x.id)===idStr);if(!a) return;
+  const a=accs.find(x=>String(x.id)===idStr);
+  if(!a) {
+    console.error('❌ Cliente no encontrado en regRapido:', id);
+    return;
+  }
   if(!a.hist) a.hist=[];
   const monto=tipo==='total'?total(a):interest(a);
   a.hist.push({tipo,monto,fecha:TODAY.toLocaleDateString('es-MX')});
@@ -2994,7 +3023,12 @@ function regRapido(id, tipo){
   if(tipo==='interes') a.meses=(a.meses||0)+1;
   // GUARDAR A localStorage Y BD
   try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
-  if(typeof persist !== 'undefined') persist.saveNow();
+  if(persist && persist.saveNow) {
+    persist.saveNow();
+    console.log('✅ Pago rápido:', tipo, '→', monto, 'para', a.name);
+  } else {
+    console.warn('⚠️ persist.saveNow no disponible');
+  }
   renderHoy();renderAll();
 }
 
@@ -5918,36 +5952,86 @@ function cuentaVinculadaARed(a){
   return idsVinculadosARed().has(String(a.id));
 }
 
-function loadRedes(){
+let loadRedes_inProgress = false;
+
+async function loadRedes(){
+  // Prevenir llamadas simultáneas
+  if(loadRedes_inProgress) return;
+  loadRedes_inProgress = true;
+  
+  try {
+    // 🔥 PRIMERO: Intentar traer de Supabase vía servidor
+    if(srvConnected){
+      const resp = await fetch('/sync', {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000)
+      });
+      
+      if(resp.ok){
+        const data = await resp.json();
+        if(data.redes && Array.isArray(data.redes) && data.redes.length > 0){
+          REDES = data.redes;
+          try{ localStorage.setItem('REDES_data', JSON.stringify(REDES)); }catch(e){}
+          console.log('✅ REDES cargadas desde SERVIDOR:', REDES.length, 'redes');
+          loadRedes_inProgress = false;
+          return;
+        }
+      }
+    }
+  } catch(err){
+    console.warn('⚠️ No se pudo conectar a servidor para REDES:', err.message);
+  }
+  
+  // FALLBACK: cargar del localStorage local
   try {
     REDES = JSON.parse(localStorage.getItem('REDES_data') || '[]');
+    if(REDES.length > 0) console.log('ℹ️ REDES cargadas desde localStorage:', REDES.length, 'redes');
   } catch(e) {
     REDES = [];
+    console.error('❌ Error parseando REDES:', e.message);
   }
+  
+  loadRedes_inProgress = false;
 }
 
 function saveRedes(){
+  // SIEMPRE guardar en localStorage primero
   try {
     localStorage.setItem('REDES_data', JSON.stringify(REDES));
+    console.log('💾 REDES guardadas en localStorage:', REDES.length, 'redes');
   } catch(e) {
-    console.error('Error guardando redes:', e);
+    console.error('❌ Error guardando REDES en localStorage:', e);
   }
-  // 🔧 NUEVO: empujar REDES al servidor de inmediato, no solo localStorage
-  try {
-    fetch('/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accs: (typeof accs !== 'undefined' ? accs : []),
-        vendedores: (typeof vendedores !== 'undefined' ? vendedores : {}),
-        cfg: (typeof CFG !== 'undefined' ? CFG : {}),
-        redes: REDES
+  
+  // LUEGO guardar en Supabase si está conectado
+  if(srvConnected && persist && persist.saveData){
+    try {
+      fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accs: (Array.isArray(accs) ? accs : []),
+          vendedores: (vendedores && typeof vendedores === 'object' ? vendedores : {}),
+          cfg: (CFG || {}),
+          redes: REDES
+        })
       })
-    }).then(r => r.json()).then(d => {
-      console.log('✅ REDES guardadas en servidor:', d);
-    }).catch(err => console.error('❌ Error guardando REDES en servidor:', err));
-  } catch(e) {
-    console.error('Error mandando redes al servidor:', e);
+      .then(r => r.json())
+      .then(d => {
+        if(d.success){
+          console.log('✅ REDES guardadas en SERVIDOR:', REDES.length, 'redes');
+        } else {
+          console.warn('⚠️ Error guardando REDES en servidor:', d.error);
+        }
+      })
+      .catch(err => {
+        console.warn('⚠️ Error POST /sync para REDES:', err.message);
+      });
+    } catch(e) {
+      console.error('❌ Error mandando REDES al servidor:', e);
+    }
+  } else {
+    console.log('ℹ️ Servidor desconectado, REDES solo en localStorage');
   }
 }
 
@@ -6275,6 +6359,9 @@ console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés exte
   }
 
   window.addEventListener('load', function(){
+    // ✅ PRIMERO: Verificar conexión al servidor
+    checkServer();
+    
     // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
     setTimeout(pullFromServer, 800);
     // Jala cambios de otros dispositivos cada 15s (sincronización "en vivo")
@@ -6283,6 +6370,12 @@ console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés exte
     setInterval(function(){
       if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
     }, 15000);
+    // Sincronizar REDES cada 20s desde el servidor
+    setInterval(async () => {
+      if(srvConnected && typeof loadRedes === 'function') {
+        await loadRedes();
+      }
+    }, 20000);
   });
 
   console.log('✅ Sincronización en vivo con Supabase activada (cada 15s)');

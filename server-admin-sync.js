@@ -4,76 +4,208 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 require('dotenv').config();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('❌ Faltan SUPABASE_URL / SUPABASE_KEY en las variables de entorno');
   process.exit(1);
 }
+
+// Se pasa 'ws' explícito para evitar el crash de WebSocket nativo en Node < 22
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { transport: WebSocket }
 });
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Desactivar caché SIEMPRE — evita que celulares muestren versiones viejas del admin
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
   next();
 });
+
 app.use(express.static(__dirname, { etag: false, lastModified: false }));
 
+// ============================================================================
+// POST /sync — Guardar TODOS los datos en Supabase
+// ============================================================================
 app.post('/sync', async (req, res) => {
   try {
     const { accs, vendedores, cfg, redes } = req.body;
-    const { error } = await supabase.from('backup').upsert({
-      id: 'main',
-      accs_data: accs || [],
-      vendedores_data: vendedores || {},
-      config_data: cfg || {},
-      redes_data: redes || [],
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-    if (error) throw error;
-    res.json({ success: true, mensaje: 'Guardado en Supabase' });
+    
+    console.log('📥 POST /sync recibido:', {
+      accs_count: Array.isArray(accs) ? accs.length : 0,
+      redes_count: Array.isArray(redes) ? redes.length : 0,
+      vendedores_count: Object.keys(vendedores || {}).length,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Validar que al menos accs sea un array
+    if (!Array.isArray(accs)) {
+      console.warn('⚠️ accs no es array:', typeof accs);
+      return res.status(400).json({ success: false, error: 'accs debe ser un array' });
+    }
+    
+    // UPSERT a Supabase — siempre sobrescribe lo viejo con lo nuevo
+    const { data, error } = await supabase
+      .from('backup')
+      .upsert(
+        {
+          id: 'main',
+          accs_data: accs,
+          vendedores_data: vendedores || {},
+          config_data: cfg || {},
+          redes_data: redes || [],
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'id' }
+      )
+      .select();
+    
+    if (error) {
+      console.error('❌ Error en UPSERT:', error.message);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        details: error.details 
+      });
+    }
+    
+    console.log('✅ Datos guardados en Supabase correctamente');
+    return res.json({ 
+      success: true, 
+      mensaje: 'Guardado en Supabase',
+      guardado: {
+        accs: accs.length,
+        redes: (redes || []).length,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
   } catch (err) {
-    console.error('❌ POST /sync:', err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error('❌ POST /sync error:', err.message);
+    return res.status(500).json({ 
+      success: false, 
+      error: err.message 
+    });
   }
 });
 
+// ============================================================================
+// GET /sync — Traer TODOS los datos desde Supabase
+// ============================================================================
 app.get('/sync', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('backup').select('*').eq('id', 'main').single();
-    if (error && error.code !== 'PGRST116') throw error;
-    if (!data) return res.json({ accs: [], vendedores: {}, cfg: {}, redes: [] });
-    res.json({
+    const { data, error } = await supabase
+      .from('backup')
+      .select('*')
+      .eq('id', 'main')
+      .single();
+    
+    // Si no existe aún, devolver estructura vacía
+    if (error && error.code === 'PGRST116') {
+      console.log('ℹ️ No hay datos en Supabase aún, devolviendo vacío');
+      return res.json({ 
+        accs: [], 
+        vendedores: {}, 
+        cfg: {}, 
+        redes: [],
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    if (error) {
+      console.error('❌ Error en GET /sync:', error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    
+    if (!data) {
+      return res.json({ 
+        accs: [], 
+        vendedores: {}, 
+        cfg: {}, 
+        redes: [],
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    console.log('✅ Datos traídos de Supabase:', {
+      accs: (data.accs_data || []).length,
+      redes: (data.redes_data || []).length,
+      timestamp: new Date().toISOString()
+    });
+    
+    return res.json({
       accs: data.accs_data || [],
       vendedores: data.vendedores_data || {},
       cfg: data.config_data || {},
-      redes: data.redes_data || []
+      redes: data.redes_data || [],
+      updated_at: data.updated_at,
+      timestamp: new Date().toISOString()
     });
+    
   } catch (err) {
-    console.error('❌ GET /sync:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('❌ GET /sync error:', err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
 
+// ============================================================================
+// GET /api/health — Verificar salud del servidor y Supabase
+// ============================================================================
 app.get('/api/health', async (req, res) => {
   try {
-    const { error } = await supabase.from('backup').select('count').limit(1);
-    res.json({ status: 'ok', supabase: error ? 'disconnected' : 'connected', timestamp: new Date().toISOString() });
+    // Intentar hacer un SELECT simple a Supabase para verificar conexión
+    const { error } = await supabase
+      .from('backup')
+      .select('count')
+      .limit(1);
+    
+    const isConnected = !error;
+    
+    return res.json({
+      status: isConnected ? 'ok' : 'error',
+      supabase: isConnected ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      error: error ? error.message : null
+    });
+    
   } catch (err) {
-    res.json({ status: 'error', supabase: 'error', error: err.message });
+    return res.json({
+      status: 'error',
+      supabase: 'error',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
+// ============================================================================
+// GET / — Servir admin.html
+// ============================================================================
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
+// ============================================================================
+// INICIAR SERVIDOR
+// ============================================================================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('✅ CASHAZO server + Supabase corriendo en 0.0.0.0:' + PORT);
+  console.log(`
+╔════════════════════════════════════════╗
+║      ✅ CASHAZO SERVER ONLINE          ║
+║  URL: http://0.0.0.0:${PORT}                   
+║  Supabase: ${SUPABASE_URL ? '🟢 Conectado' : '🔴 Error'}              
+║  Admin: http://localhost:${PORT}               
+╚════════════════════════════════════════╝
+  `);
 });
