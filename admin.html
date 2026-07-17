@@ -2504,11 +2504,11 @@ function guardarCfg(){
   CFG.botIntervaloMin=parseInt((document.getElementById('cfg-bot-intv')||{}).value||60)||60;
   CFG.botLlamarDias=parseInt((document.getElementById('cfg-bot-dias')||{}).value||3)||3;
   CFG.botLlamarRefs=(document.getElementById('cfg-bot-refs')||{}).checked!==false;
-  CFG.twilioServer=document.getElementById('cfg-twilio-server').value.trim()||'http://localhost:3000';
-  CFG.twilioSid=document.getElementById('twilio_sid').value.trim();
-  CFG.twilioToken=document.getElementById('twilio_token').value.trim();
-  CFG.twilioSms=document.getElementById('twilio_number_sms').value.trim();
-  CFG.twilioWa=document.getElementById('twilio_number_wa').value.trim();
+  CFG.twilioServer=(document.getElementById('cfg-twilio-server')||{}).value?.trim()||'http://localhost:3000';
+  CFG.twilioSid=(document.getElementById('twilio_sid')||{}).value?.trim()||'';
+  CFG.twilioToken=(document.getElementById('twilio_token')||{}).value?.trim()||'';
+  CFG.twilioSms=(document.getElementById('twilio_number_sms')||{}).value?.trim()||'';
+  CFG.twilioWa=(document.getElementById('twilio_number_wa')||{}).value?.trim()||'';
   
   // ✅ GUARDAR LOCALMENTE PRIMERO (INSTANTÁNEO)
   try {
