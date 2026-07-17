@@ -698,6 +698,35 @@ const accumulatedLateFee = a => { const dias=dOvr(a.ddp,a); return dias>0 ? dail
 const multaDiaria = dailyLateFee;
 const multaAcumulada = accumulatedLateFee;
 
+// 🔥 NUEVA FUNCIÓN: Calcular deuda REAL acumulada (capital + interés diario acumulado)
+// Esta es la deuda VERDADERA que el cliente debe, sin considerar si pagó o no
+const realAccumulatedDebt = (a) => {
+  if (!a) return 0;
+  
+  // Base: capital pendiente
+  let debt = a.amt || 0;
+  
+  // Si está en atraso, agregar moratoria diaria (mora)
+  const daysOverdue = dOvr(a.ddp, a);
+  if (daysOverdue > 0) {
+    const dailyMora = Math.round((a.amt * a.rate / 100) / 30); // Interés mensual / 30
+    debt += dailyMora * daysOverdue;
+  }
+  
+  // Agregar intereses ya registrados en historial
+  if (a.hist && Array.isArray(a.hist)) {
+    const totalInterestPaid = a.hist
+      .filter(h => h.tipo === 'interes' && h.monto)
+      .reduce((sum, h) => sum + (h.monto || 0), 0);
+    debt += totalInterestPaid;
+  }
+  
+  return Math.round(debt);
+};
+
+// Alias
+const deudaReal = realAccumulatedDebt;
+
 // 🔧 NUEVA FUNCIÓN: Checar si una cuenta pagó ESTE MES
 const paidThisMonth = (acc) => {
   if(!acc.hist || acc.hist.length === 0) return false;
@@ -2468,7 +2497,33 @@ function guardarCfg(){
     persist.saveConfig();
   }
   
-  document.getElementById('cfg-msg').textContent='✓ configuración guardada';
+  // 🔥 NUEVO: Sincronizar configuración a Supabase inmediatamente
+  const serverUrl = CFG.serverUrl || 'http://localhost:3000';
+  fetch(serverUrl + '/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      accs: accs,
+      vendedores: vendedores,
+      cfg: CFG,
+      redes: (typeof REDES !== 'undefined' ? REDES : [])
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      console.log('✅ Configuración sincronizada con Supabase:', data.mensaje);
+      document.getElementById('cfg-msg').textContent='✓ configuración guardada y sincronizada';
+    } else {
+      console.warn('⚠️ Error sincronizando config:', data.error);
+      document.getElementById('cfg-msg').textContent='✓ guardada localmente (servidor offline)';
+    }
+  })
+  .catch(err => {
+    console.warn('❌ No se pudo conectar al servidor:', err.message);
+    document.getElementById('cfg-msg').textContent='✓ guardada localmente (servidor offline)';
+  });
+  
   document.getElementById('cfg-msg').style.color='var(--grn)';
   setTimeout(()=>document.getElementById('cfg-msg').textContent='',3000);
 }
@@ -2679,6 +2734,21 @@ function openPerfil(id){
         <div class="igi"><div class="igl">Pendiente</div><div class="igv" style="color:var(--amb);font-family:var(--mono)">${fm(Math.max(0,pendiente),a.cur)}</div></div>
         ${ov>0?`<div class="igi" style="border-color:rgba(224,82,82,.4)"><div class="igl" style="color:var(--red)">Días vencido</div><div class="igv" style="color:var(--red)">${ov}d</div></div>`:''}
         ${mc>0?`<div class="igi" style="border-color:rgba(212,147,42,.4)"><div class="igl" style="color:var(--amb)">Mora acumulada</div><div class="igv" style="color:var(--amb);font-family:var(--mono)">${fm(mc,a.cur)}</div></div>`:''}
+      </div>
+
+      <div style="background:rgba(224,82,82,.1);border:2px solid rgba(224,82,82,.4);border-radius:10px;padding:12px;margin:.75rem 0">
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">💸 DEUDA REAL ACUMULADA</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>
+            <div style="font-size:10px;color:var(--t2);margin-bottom:2px">Capital + Interés</div>
+            <div style="font-size:16px;font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(realAccumulatedDebt(a),a.cur)}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--t2);margin-bottom:2px">Interés diario</div>
+            <div style="font-size:12px;color:var(--amb);font-family:var(--mono)">+${fm(Math.round(a.amt*a.rate/100/30),a.cur)}/día</div>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--t3);margin-top:6px;font-style:italic;font-family:var(--mono)">// Sin pago, crece ${Math.round(a.amt*a.rate/100/30)} ${a.cur} cada día</div>
       </div>
 
       ${renegHtml}
