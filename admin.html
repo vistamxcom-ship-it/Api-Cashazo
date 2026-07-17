@@ -459,15 +459,45 @@ let CFG = {
   //   Día 5+: mismo pero a referencias también
 };
 
-// 🔧 CARGAR CONFIGURACIÓN GUARDADA DESDE LOCALSTORAGE AL INICIAR
-try {
-  const savedCfg = localStorage.getItem('dmin_cfg');
-  if (savedCfg) {
-    const loaded = JSON.parse(savedCfg);
-    CFG = { ...CFG, ...loaded };
-  }
-} catch (e) {
-  console.warn('⚠️ No se pudo cargar configuración:', e);
+// 🔧 CARGAR CONFIGURACIÓN — Primero desde Supabase, luego localStorage como backup
+function loadConfigFromServer() {
+  return new Promise((resolve, reject) => {
+    // Primero intentar desde servidor
+    const serverUrl = (window.CFG && window.CFG.serverUrl) || 'http://localhost:3000';
+    
+    fetch(serverUrl + '/sync', { timeout: 3000 })
+      .then(resp => {
+        if (resp.ok) return resp.json();
+        throw new Error('No response from server');
+      })
+      .then(data => {
+        if (data.cfg && typeof data.cfg === 'object') {
+          CFG = { ...CFG, ...data.cfg };
+          console.log('✅ Config cargada desde SERVIDOR (Supabase)');
+          resolve(true);
+          return;
+        }
+        throw new Error('No config data');
+      })
+      .catch(err => {
+        console.warn('⚠️ No se pudo cargar config del servidor, intentando localStorage:', err.message);
+        
+        // Fallback: cargar desde localStorage
+        try {
+          const savedCfg = localStorage.getItem('dmin_cfg');
+          if (savedCfg) {
+            const loaded = JSON.parse(savedCfg);
+            CFG = { ...CFG, ...loaded };
+            console.log('✅ Config cargada desde localStorage (servidor offline)');
+            resolve(true);
+            return;
+          }
+        } catch (e) {
+          console.warn('⚠️ No se pudo cargar configuración:', e);
+        }
+        resolve(false); // No encontramos config, pero continuamos
+      });
+  });
 }
 
 // ============================================================
@@ -698,27 +728,27 @@ const accumulatedLateFee = a => { const dias=dOvr(a.ddp,a); return dias>0 ? dail
 const multaDiaria = dailyLateFee;
 const multaAcumulada = accumulatedLateFee;
 
-// 🔥 NUEVA FUNCIÓN: Calcular deuda REAL acumulada (capital + interés diario acumulado)
-// Esta es la deuda VERDADERA que el cliente debe, sin considerar si pagó o no
+// 🔥 NUEVA FUNCIÓN: Calcular deuda REAL
+// Fórmula: Capital + Interés Mensual + Mora Diaria (si se atrasa)
+// Ejemplo: Capital $3,000 @ 50% → Interés $1,500/mes
+//          Mora diaria = $3,000 / 30 = $100/día (si se atrasa)
+//          Deuda total = $3,000 + $1,500 + ($100 × días atrasados)
 const realAccumulatedDebt = (a) => {
   if (!a) return 0;
   
-  // Base: capital pendiente
+  // 1️⃣ Capital
   let debt = a.amt || 0;
   
-  // Si está en atraso, agregar moratoria diaria (mora)
+  // 2️⃣ Interés mensual (lo que cobra cada mes)
+  const monthlyInt = Math.round(a.amt * a.rate / 100);
+  debt += monthlyInt;
+  
+  // 3️⃣ Mora diaria (solo si se atrasa)
+  // Mora = Capital / 30 días
   const daysOverdue = dOvr(a.ddp, a);
   if (daysOverdue > 0) {
-    const dailyMora = Math.round((a.amt * a.rate / 100) / 30); // Interés mensual / 30
+    const dailyMora = Math.round(a.amt / 30);
     debt += dailyMora * daysOverdue;
-  }
-  
-  // Agregar intereses ya registrados en historial
-  if (a.hist && Array.isArray(a.hist)) {
-    const totalInterestPaid = a.hist
-      .filter(h => h.tipo === 'interes' && h.monto)
-      .reduce((sum, h) => sum + (h.monto || 0), 0);
-    debt += totalInterestPaid;
   }
   
   return Math.round(debt);
@@ -754,7 +784,15 @@ function tryLogin(){
     const app=document.getElementById('app');
     app.style.display='flex';
     document.getElementById('tdate').textContent=TODAY.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).toUpperCase();
-    renderAll();
+    
+    // 🔥 NUEVO: Cargar config desde servidor ANTES de renderizar
+    loadConfigFromServer().then(() => {
+      console.log('✅ Config lista, renderizando...');
+      renderAll();
+    }).catch(err => {
+      console.warn('⚠️ No se pudo cargar config:', err);
+      renderAll(); // Renderizar de todas formas
+    });
   } else document.getElementById('lerr').style.display='block';
 }
 ['lu','lp'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin()}));
@@ -2737,18 +2775,23 @@ function openPerfil(id){
       </div>
 
       <div style="background:rgba(224,82,82,.1);border:2px solid rgba(224,82,82,.4);border-radius:10px;padding:12px;margin:.75rem 0">
-        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">💸 DEUDA REAL ACUMULADA</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div>
-            <div style="font-size:10px;color:var(--t2);margin-bottom:2px">Capital + Interés</div>
-            <div style="font-size:16px;font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(realAccumulatedDebt(a),a.cur)}</div>
+        <div style="font-size:10px;color:var(--t3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;border-bottom:1px solid rgba(224,82,82,.2);padding-bottom:8px">💸 DEUDA REAL ACUMULADA</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px">
+            <div><span style="color:var(--t2)">Capital</span><br><span style="font-size:12px;font-weight:bold;color:var(--t1);font-family:var(--mono)">${fm(a.amt,a.cur)}</span></div>
+            <div><span style="color:var(--t2)">Interés mensual (${a.rate}%)</span><br><span style="font-size:12px;font-weight:bold;color:var(--grn);font-family:var(--mono)">+${fm(Math.round(a.amt*a.rate/100),a.cur)}</span></div>
           </div>
-          <div>
-            <div style="font-size:10px;color:var(--t2);margin-bottom:2px">Interés diario</div>
-            <div style="font-size:12px;color:var(--amb);font-family:var(--mono)">+${fm(Math.round(a.amt*a.rate/100/30),a.cur)}/día</div>
+          ${dOvr(a.ddp,a)>0?`<div style="border-top:1px solid rgba(224,82,82,.2);padding-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px">
+            <div><span style="color:var(--amb)">Mora diaria (capital/30)</span><br><span style="font-size:11px;font-weight:bold;color:var(--amb);font-family:var(--mono)">+${fm(Math.round(a.amt/30),a.cur)}/día</span></div>
+            <div><span style="color:var(--amb)">Mora acumulada (${dOvr(a.ddp,a)}d)</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">+${fm(Math.round(a.amt/30)*dOvr(a.ddp,a),a.cur)}</span></div>
+          </div>`:''}
+          <div style="border-top:1px solid rgba(224,82,82,.3);margin-top:6px;padding-top:8px;display:grid;grid-template-columns:1fr;gap:0">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:11px;color:var(--t3);font-weight:600">TOTAL ADEUDADO</span>
+              <span style="font-size:16px;font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(realAccumulatedDebt(a),a.cur)}</span>
+            </div>
           </div>
         </div>
-        <div style="font-size:9px;color:var(--t3);margin-top:6px;font-style:italic;font-family:var(--mono)">// Sin pago, crece ${Math.round(a.amt*a.rate/100/30)} ${a.cur} cada día</div>
       </div>
 
       ${renegHtml}
