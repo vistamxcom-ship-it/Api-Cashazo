@@ -459,46 +459,37 @@ let CFG = {
   //   Día 5+: mismo pero a referencias también
 };
 
-// 🔧 CARGAR CONFIGURACIÓN — Primero desde Supabase, luego localStorage como backup
-function loadConfigFromServer() {
-  return new Promise((resolve, reject) => {
-    // Primero intentar desde servidor
-    const serverUrl = (window.CFG && window.CFG.serverUrl) || 'http://localhost:3000';
-    
-    fetch(serverUrl + '/sync', { timeout: 3000 })
-      .then(resp => {
-        if (resp.ok) return resp.json();
-        throw new Error('No response from server');
-      })
-      .then(data => {
-        if (data.cfg && typeof data.cfg === 'object') {
-          CFG = { ...CFG, ...data.cfg };
-          console.log('✅ Config cargada desde SERVIDOR (Supabase)');
-          resolve(true);
-          return;
-        }
-        throw new Error('No config data');
-      })
-      .catch(err => {
-        console.warn('⚠️ No se pudo cargar config del servidor, intentando localStorage:', err.message);
-        
-        // Fallback: cargar desde localStorage
-        try {
-          const savedCfg = localStorage.getItem('dmin_cfg');
-          if (savedCfg) {
-            const loaded = JSON.parse(savedCfg);
-            CFG = { ...CFG, ...loaded };
-            console.log('✅ Config cargada desde localStorage (servidor offline)');
-            resolve(true);
-            return;
-          }
-        } catch (e) {
-          console.warn('⚠️ No se pudo cargar configuración:', e);
-        }
-        resolve(false); // No encontramos config, pero continuamos
-      });
-  });
+// 🔧 CARGAR CONFIG DESDE LOCALSTORAGE (SIN ESPERAR AL SERVIDOR)
+// El servidor sincroniza en background, pero no bloquea el inicio
+function loadConfigFromLocalStorage() {
+  try {
+    const savedCfg = localStorage.getItem('dmin_cfg');
+    if (savedCfg) {
+      const loaded = JSON.parse(savedCfg);
+      CFG = { ...CFG, ...loaded };
+      console.log('✅ Config cargada desde localStorage');
+    }
+  } catch (e) {
+    console.warn('⚠️ Error cargando config:', e);
+  }
 }
+
+// Cargar config al iniciar (SIN ESPERAR)
+loadConfigFromLocalStorage();
+
+// EN BACKGROUND: sincronizar config desde servidor si está disponible
+setTimeout(() => {
+  const serverUrl = (window.CFG && window.CFG.serverUrl) || 'http://localhost:3000';
+  fetch(serverUrl + '/sync', { signal: AbortSignal.timeout(2000) })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data && data.cfg) {
+        CFG = { ...CFG, ...data.cfg };
+        console.log('✅ Config actualizada desde servidor en background');
+      }
+    })
+    .catch(err => console.warn('⚠️ No hay conexión al servidor (está bien, usa localStorage)'));
+}, 1000);
 
 // ============================================================
 // SISTEMA DE PERSISTENCIA AUTOMÁTICA CON LOCALSTORAGE
@@ -531,7 +522,7 @@ class PersistenceManager {
   // Guardar datos
 saveData() {
   try {
-    // Guardar en localStorage (respaldo local)
+    // ✅ GUARDAR EN LOCALSTORAGE PRIMERO (INSTANTÁNEO)
     const dataToSave = {
       accounts: accs,
       vendedores: vendedores
@@ -539,31 +530,31 @@ saveData() {
     localStorage.setItem(this.dataKey, JSON.stringify(dataToSave));
     console.log('💾 Datos guardados en localStorage');
 
-    // 🔧 Asegurar que REDES esté cargado antes de mandarlo al servidor
-    if(typeof loadRedes === 'function') loadRedes();
-    
-    // 🔥 NUEVO: Guardar TAMBIÉN en el servidor (JSON)
-    fetch('/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accs: accs,
-        vendedores: vendedores,
-        cfg: CFG,
-        redes: (typeof REDES !== 'undefined' ? REDES : [])
+    // 🔄 EN BACKGROUND: sincronizar al servidor (SIN ESPERAR)
+    // Esto no bloquea la UI
+    setTimeout(() => {
+      if(typeof loadRedes === 'function') loadRedes();
+      
+      fetch('/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accs: accs,
+          vendedores: vendedores,
+          cfg: CFG,
+          redes: (typeof REDES !== 'undefined' ? REDES : [])
+        })
       })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success) {
-        console.log('✅ Datos guardados en SERVIDOR: ' + data.mensaje);
-      } else {
-        console.warn('⚠️ Error guardando en servidor:', data.error);
-      }
-    })
-    .catch(err => {
-      console.warn('❌ No se pudo conectar al servidor:', err);
-    });
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          console.log('✅ Datos sincronizados en background');
+        }
+      })
+      .catch(err => {
+        console.warn('⚠️ Sync background error (datos están en localStorage)');
+      });
+    }, 50); // Post en background después de 50ms
     
   } catch(e) {
     console.warn('No se pudo guardar datos:', e);
@@ -784,15 +775,7 @@ function tryLogin(){
     const app=document.getElementById('app');
     app.style.display='flex';
     document.getElementById('tdate').textContent=TODAY.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).toUpperCase();
-    
-    // 🔥 NUEVO: Cargar config desde servidor ANTES de renderizar
-    loadConfigFromServer().then(() => {
-      console.log('✅ Config lista, renderizando...');
-      renderAll();
-    }).catch(err => {
-      console.warn('⚠️ No se pudo cargar config:', err);
-      renderAll(); // Renderizar de todas formas
-    });
+    renderAll(); // Sin esperar al servidor
   } else document.getElementById('lerr').style.display='block';
 }
 ['lu','lp'].forEach(id=>document.getElementById(id).addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin()}));
@@ -2525,45 +2508,38 @@ function guardarCfg(){
   CFG.twilioSms=document.getElementById('twilio_number_sms').value.trim();
   CFG.twilioWa=document.getElementById('twilio_number_wa').value.trim();
   
-  // Guardar en localStorage de emergencia y persistencia
+  // ✅ GUARDAR LOCALMENTE PRIMERO (INSTANTÁNEO)
   try {
     localStorage.setItem('dmin_cfg', JSON.stringify(CFG));
   } catch(e) {}
   
-  // Guardar en sistema de persistencia
   if(typeof persist !== 'undefined') {
     persist.saveConfig();
   }
   
-  // 🔥 NUEVO: Sincronizar configuración a Supabase inmediatamente
-  const serverUrl = CFG.serverUrl || 'http://localhost:3000';
-  fetch(serverUrl + '/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      accs: accs,
-      vendedores: vendedores,
-      cfg: CFG,
-      redes: (typeof REDES !== 'undefined' ? REDES : [])
-    })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.success) {
-      console.log('✅ Configuración sincronizada con Supabase:', data.mensaje);
-      document.getElementById('cfg-msg').textContent='✓ configuración guardada y sincronizada';
-    } else {
-      console.warn('⚠️ Error sincronizando config:', data.error);
-      document.getElementById('cfg-msg').textContent='✓ guardada localmente (servidor offline)';
-    }
-  })
-  .catch(err => {
-    console.warn('❌ No se pudo conectar al servidor:', err.message);
-    document.getElementById('cfg-msg').textContent='✓ guardada localmente (servidor offline)';
-  });
-  
+  // Mostrar mensaje INMEDIATAMENTE (no esperar al servidor)
+  document.getElementById('cfg-msg').textContent='✓ Configuración guardada';
   document.getElementById('cfg-msg').style.color='var(--grn)';
   setTimeout(()=>document.getElementById('cfg-msg').textContent='',3000);
+  
+  // 🔄 EN BACKGROUND: sincronizar a Supabase (SIN BLOQUEAR)
+  const serverUrl = CFG.serverUrl || 'http://localhost:3000';
+  setTimeout(() => {
+    fetch(serverUrl + '/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accs: accs,
+        vendedores: vendedores,
+        cfg: CFG,
+        redes: (typeof REDES !== 'undefined' ? REDES : [])
+      })
+    })
+    .then(res => {
+      if (res.ok) console.log('✅ Config sincronizada con Supabase en background');
+    })
+    .catch(err => console.warn('⚠️ Sync background error (config está guardada localmente):', err.message));
+  }, 100); // Post en background, no bloquea
 }
 
 // ============================================================
