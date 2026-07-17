@@ -55,15 +55,16 @@ app.post('/sync', async (req, res) => {
     }
     
     // UPSERT a Supabase — siempre sobrescribe lo viejo con lo nuevo
+    // ✅ FIX: Si las columnas en Supabase son TEXT (no jsonb), guardar como JSON strings
     const { data, error } = await supabase
       .from('backup')
       .upsert(
         {
           id: 'main',
-          accs_data: accs,
-          vendedores_data: vendedores || {},
-          config_data: cfg || {},
-          redes_data: redes || [],
+          accs_data: JSON.stringify(accs),
+          vendedores_data: JSON.stringify(vendedores || {}),
+          config_data: JSON.stringify(cfg || {}),
+          redes_data: JSON.stringify(redes || []),
           updated_at: new Date().toISOString()
         },
         { onConflict: 'id' }
@@ -137,17 +138,60 @@ app.get('/sync', async (req, res) => {
       });
     }
     
+    // ✅ FIX: Parsear datos si vienen como strings JSON (columnas TEXT en Supabase)
+    let accsData = [];
+    let vendedoresData = {};
+    let configData = {};
+    let redesData = [];
+    
+    try {
+      // Si accs_data es un string, parsearlo. Si ya es un array, dejarlo así
+      accsData = typeof data.accs_data === 'string' 
+        ? JSON.parse(data.accs_data) 
+        : (data.accs_data || []);
+    } catch(e) {
+      console.warn('⚠️ Error parseando accs_data:', e.message);
+      accsData = [];
+    }
+    
+    try {
+      vendedoresData = typeof data.vendedores_data === 'string'
+        ? JSON.parse(data.vendedores_data)
+        : (data.vendedores_data || {});
+    } catch(e) {
+      console.warn('⚠️ Error parseando vendedores_data:', e.message);
+      vendedoresData = {};
+    }
+    
+    try {
+      configData = typeof data.config_data === 'string'
+        ? JSON.parse(data.config_data)
+        : (data.config_data || {});
+    } catch(e) {
+      console.warn('⚠️ Error parseando config_data:', e.message);
+      configData = {};
+    }
+    
+    try {
+      redesData = typeof data.redes_data === 'string'
+        ? JSON.parse(data.redes_data)
+        : (data.redes_data || []);
+    } catch(e) {
+      console.warn('⚠️ Error parseando redes_data:', e.message);
+      redesData = [];
+    }
+    
     console.log('✅ Datos traídos de Supabase:', {
-      accs: (data.accs_data || []).length,
-      redes: (data.redes_data || []).length,
+      accs: Array.isArray(accsData) ? accsData.length : 0,
+      redes: Array.isArray(redesData) ? redesData.length : 0,
       timestamp: new Date().toISOString()
     });
     
     return res.json({
-      accs: data.accs_data || [],
-      vendedores: data.vendedores_data || {},
-      cfg: data.config_data || {},
-      redes: data.redes_data || [],
+      accs: accsData,
+      vendedores: vendedoresData,
+      cfg: configData,
+      redes: redesData,
       updated_at: data.updated_at,
       timestamp: new Date().toISOString()
     });

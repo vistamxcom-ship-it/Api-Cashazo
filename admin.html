@@ -478,9 +478,9 @@ function loadConfigFromLocalStorage() {
 loadConfigFromLocalStorage();
 
 // EN BACKGROUND: sincronizar config desde servidor si está disponible
+// ✅ FIX: ruta relativa, igual que el resto de las llamadas a /sync
 setTimeout(() => {
-  const serverUrl = (window.CFG && window.CFG.serverUrl) || 'http://localhost:3000';
-  fetch(serverUrl + '/sync', { signal: AbortSignal.timeout(2000) })
+  fetch('/sync', { signal: AbortSignal.timeout(2000) })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (data && data.cfg) {
@@ -2525,9 +2525,10 @@ function guardarCfg(){
   setTimeout(()=>document.getElementById('cfg-msg').textContent='',3000);
   
   // 🔄 EN BACKGROUND: sincronizar a Supabase (SIN BLOQUEAR)
-  const serverUrl = CFG.serverUrl || 'http://localhost:3000';
+  // ✅ FIX: usar ruta relativa '/sync' (igual que saveData) en vez de CFG.serverUrl,
+  // que por defecto apunta a http://localhost:3000 y falla en producción.
   setTimeout(() => {
-    fetch(serverUrl + '/sync', {
+    fetch('/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2538,9 +2539,19 @@ function guardarCfg(){
       })
     })
     .then(res => {
-      if (res.ok) console.log('✅ Config sincronizada con Supabase en background');
+      if (res.ok) {
+        console.log('✅ Config sincronizada con Supabase en background');
+      } else {
+        console.error('❌ Error al sincronizar config, status:', res.status);
+        document.getElementById('cfg-msg').textContent='⚠️ Guardado local, pero falló sync con servidor';
+        document.getElementById('cfg-msg').style.color='var(--red, #e05252)';
+      }
     })
-    .catch(err => console.warn('⚠️ Sync background error (config está guardada localmente):', err.message));
+    .catch(err => {
+      console.warn('⚠️ Sync background error (config está guardada localmente):', err.message);
+      document.getElementById('cfg-msg').textContent='⚠️ Guardado local, sin conexión al servidor';
+      document.getElementById('cfg-msg').style.color='var(--red, #e05252)';
+    });
   }, 100); // Post en background, no bloquea
 }
 
