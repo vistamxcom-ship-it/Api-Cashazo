@@ -755,8 +755,10 @@ const paidThisMonth = (acc) => {
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
   
+  // Contar CUALQUIER tipo de pago (interes, parcial, total) — no solo interes
   return acc.hist.some(h => {
-    if(h.tipo !== 'interes') return false;
+    // Solo contar si es un pago real (no otros tipos como renegociacion)
+    if(!['interes', 'parcial', 'total'].includes(h.tipo)) return false;
     // Fecha está en formato "dd/m/yyyy" o "d/m/yyyy"
     const partes = h.fecha.split('/');
     const payDate = new Date(partes[2], partes[1] - 1, partes[0]);
