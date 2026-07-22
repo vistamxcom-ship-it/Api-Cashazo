@@ -2179,8 +2179,10 @@ async function sendMsg(id, tipo){
 
 function renderMsg(){
   const act=accs.filter(a=>a.status==='activo'&&a.type!=='activo');
-  const upcoming=act.filter(a=>a.ddp&&dUntil(a.ddp,a)<=5&&dUntil(a.ddp,a)>0);
-  const overdue=act.filter(a=>a.ddp&&dOvr(a.ddp,a)>0);
+  const upcoming=act.filter(a=>a.ddp&&dUntil(a.ddp,a)<=5&&dUntil(a.ddp,a)>0)
+    .sort((a,b)=>new Date(b.ddp||0)-new Date(a.ddp||0)); // 📅 Ordenar por fecha (más próximo primero)
+  const overdue=act.filter(a=>a.ddp&&dOvr(a.ddp,a)>0)
+    .sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)); // 🔴 Ordenar por días vencido (más vencido primero)
   const bigOverdue=overdue.filter(a=>dOvr(a.ddp,a)>=10);
 
   document.getElementById('pane-msg').innerHTML=`
@@ -2191,27 +2193,27 @@ function renderMsg(){
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','recordatorio')">📅 WA E1</button><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','sms-rec')">SMS</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en 5 días</p>'}
     <div class="sec">💫 etapa 2 — vencimiento (día de pago)</div>
-    ${accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).length?accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
+    ${accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).length?accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).sort((a,b)=>new Date(b.ddp||0)-new Date(a.ddp||0)).map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">HOY VENCE</span></div>
       <div class="wa-preview">${msgText(a,'cobro')}</div>
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','cobro')">💫 WA E2</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno vence hoy</p>'}
     <div class="sec">⚠️ etapa 3 — primer retraso (1–7 días)</div>
-    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
+    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-o">${d} día${d>1?'s':''} de retraso</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora')}</div>
       <div class="fr"><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','mora')">⚠️ WA E3</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
     <div class="sec">🚨 etapa 4 — retraso importante (8–30 días)</div>
-    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
+    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS</span>${d>=15?'<span class="bx bx-r">⚠️ CONTACTAR REFS</span>':''}</div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora acum: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora-grave')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','mora-grave')">🚨 WA E4</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
     <div class="sec">🔴 etapa 5 — último aviso (31+ días)</div>
-    ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
+    ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS — CRÍTICO</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Deuda: ${fm(deuda,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'ultimo-aviso')}</div>
@@ -3676,6 +3678,9 @@ function renderRedes(){
       <div class="mc"><div class="mc-l">Activas</div><div class="mc-v">${activasVinculadas}</div></div>
     </div>
 
+    <!-- 🔧 DETECTAR DUPLICADAS -->
+    <div id="redes-duplicadas-alert" style="margin-bottom:1.5rem"></div>
+
     <!-- FORMULARIO AGREGAR -->
     <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:10px;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:1rem">➕ NUEVA RED</div>
@@ -3735,6 +3740,11 @@ function renderRedes(){
   
   document.getElementById('pane-red').innerHTML = redesHTML;
   
+  // Renderizar detector de duplicadas
+  setTimeout(() => {
+    renderizarDuplicadas();
+  }, 50);
+  
   // Agregar event listeners a inputs
   setTimeout(() => {
     document.querySelectorAll('[data-redes-idx]').forEach(el => {
@@ -3756,6 +3766,43 @@ function eliminarRed(idx){
     saveRedes();
     renderRedes();
   }
+}
+
+// 🔧 DETECTOR DE REDES DUPLICADAS
+function renderizarDuplicadas(){
+  const grupos = {};
+  REDES.forEach((red, idx) => {
+    const clave = `${red.enlace}|${red.plataforma}`;
+    if(!grupos[clave]) grupos[clave] = [];
+    grupos[clave].push({...red, _idx: idx});
+  });
+  
+  const duplicadas = Object.values(grupos).filter(g => g.length > 1);
+  const alertDiv = document.getElementById('redes-duplicadas-alert');
+  
+  if(!alertDiv) return;
+  if(duplicadas.length === 0) {
+    alertDiv.innerHTML = '';
+    return;
+  }
+  
+  let html = '<div style="background:rgba(212,147,42,.08);border:1px solid rgba(212,147,42,.25);border-radius:9px;padding:1rem">'+
+    '<div style="color:var(--amb);font-weight:600;margin-bottom:.5rem;display:flex;align-items:center;gap:6px">'+
+    '<span style="font-size:18px">⚠️</span> REDES DUPLICADAS DETECTADAS'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--t2);line-height:1.6;font-family:var(--mono)">';
+  
+  duplicadas.forEach(grupo => {
+    const cuentas = grupo.map(r => r.nombre || 'Sin nombre').join(' • ');
+    html += '<div style="margin-bottom:6px;padding:6px 8px;background:rgba(212,147,42,.12);border-radius:5px">'+
+      '<strong style="color:var(--amb)">' + (grupo[0].plataforma || 'Otra') + '</strong> '+
+      '— ' + grupo.length + ' cuentas con el mismo enlace<br>'+
+      '<span style="color:var(--t3)">Cuentas: ' + cuentas + '</span>'+
+      '</div>';
+  });
+  
+  html += '</div></div>';
+  alertDiv.innerHTML = html;
 }
 
 function eliminarCuentaDeRed(redIdx, cuentaId){
@@ -6461,8 +6508,16 @@ console.log('✅ Admin v16 PERFECTO iniciado con datos limpios (sin cachés exte
   }
 
   window.addEventListener('load', function(){
-    // ✅ PRIMERO: Verificar conexión al servidor
-    checkServer();
+    // ✅ PRIMERO: Verificar conexión al servidor (con protección)
+    if(typeof checkServer === 'function') {
+      try {
+        checkServer();
+      } catch(e) {
+        console.warn('⚠️ checkServer falló (servidor no disponible):', e.message);
+      }
+    } else {
+      console.log('ℹ️ checkServer no disponible (modo offline)');
+    }
     
     // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
     setTimeout(pullFromServer, 800);
