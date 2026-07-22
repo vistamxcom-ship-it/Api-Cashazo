@@ -2178,12 +2178,27 @@ async function sendMsg(id, tipo){
 }
 
 function renderMsg(){
-  const act=accs.filter(a=>a.status==='activo'&&a.type!=='activo');
-  const upcoming=act.filter(a=>a.ddp&&dUntil(a.ddp,a)<=5&&dUntil(a.ddp,a)>0)
-    .sort((a,b)=>new Date(b.ddp||0)-new Date(a.ddp||0)); // 📅 Ordenar por fecha (más próximo primero)
-  const overdue=act.filter(a=>a.ddp&&dOvr(a.ddp,a)>0)
-    .sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)); // 🔴 Ordenar por días vencido (más vencido primero)
-  const bigOverdue=overdue.filter(a=>dOvr(a.ddp,a)>=10);
+  // Solo cuentas activas y no "activo" (tipo normal)
+  const todas = accs.filter(a => a.status === 'activo' && a.type !== 'activo');
+  
+  // Función helper: convertir ddp a número de día (para ordenar por fecha)
+  const parseDay = (ddp) => {
+    if(!ddp) return 999;
+    const d = String(ddp).split('/')[0];
+    return parseInt(d) || 999;
+  };
+  
+  // Ordenar TODAS por DDP (número de día) — hoy primero, después mañana, etc.
+  const ordenadasPorFecha = [...todas].sort((a, b) => {
+    const diaA = parseDay(a.ddp);
+    const diaB = parseDay(b.ddp);
+    return diaA - diaB; // 21 primero, después 22, 23...
+  });
+  
+  // Separar en etapas
+  const upcoming = ordenadasPorFecha.filter(a => a.ddp && dUntil(a.ddp,a) <= 5 && dUntil(a.ddp,a) > 0);
+  const today = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) === 0);
+  const overdue = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) > 0);
 
   document.getElementById('pane-msg').innerHTML=`
     <div class="sec">🌟 etapa 1 — recordatorio preventivo (próximos 5 días)</div>
@@ -2192,29 +2207,29 @@ function renderMsg(){
       <div class="wa-preview">${msgText(a,'recordatorio')}</div>
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','recordatorio')">📅 WA E1</button><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','sms-rec')">SMS</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en 5 días</p>'}
-    <div class="sec">💫 etapa 2 — vencimiento (día de pago)</div>
-    ${accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).length?accs.filter(a=>a.status==='activo'&&dOvr(a.ddp,a)===0).sort((a,b)=>new Date(b.ddp||0)-new Date(a.ddp||0)).map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
-      <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">HOY VENCE</span></div>
+    <div class="sec">💫 etapa 2 — vencimiento (día de pago HOY)</div>
+    ${today.length?today.map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">HOY VENCE (${a.ddp})</span></div>
       <div class="wa-preview">${msgText(a,'cobro')}</div>
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','cobro')">💫 WA E2</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno vence hoy</p>'}
     <div class="sec">⚠️ etapa 3 — primer retraso (1–7 días)</div>
-    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
-      <div class="fr"><strong>${a.name}</strong><span class="bx bx-o">${d} día${d>1?'s':''} de retraso</span></div>
+    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div class="fr"><strong>${a.name}</strong><span class="bx bx-o">${d} día${d>1?'s':''} de retraso (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora')}</div>
       <div class="fr"><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','mora')">⚠️ WA E3</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
     <div class="sec">🚨 etapa 4 — retraso importante (8–30 días)</div>
-    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
-      <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS</span>${d>=15?'<span class="bx bx-r">⚠️ CONTACTAR REFS</span>':''}</div>
+    ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS (DDP: ${a.ddp})</span>${d>=15?'<span class="bx bx-r">⚠️ CONTACTAR REFS</span>':''}</div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora acum: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora-grave')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','mora-grave')">🚨 WA E4</button></div>
     </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
-    <div class="sec">🔴 etapa 5 — último aviso (31+ días)</div>
-    ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).sort((a,b)=>dOvr(b.ddp,b)-dOvr(a.ddp,a)).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
-      <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS — CRÍTICO</span></div>
+    <div class="sec">🔴 etapa 5 — último aviso (31+ días — CRÍTICO)</div>
+    ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
+      <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS — CRÍTICO (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Deuda: ${fm(deuda,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'ultimo-aviso')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','ultimo-aviso')">🔴 WA E5</button></div>
@@ -3545,30 +3560,54 @@ function renderRedes(){
     const hayTel = red.enlace && /\d{10,}/.test(red.enlace.replace(/\D/g, ''));
     const telNum = red.enlace ? red.enlace.replace(/\D/g, '') : '';
     
-    // Generar filas de cuentas vinculadas — usando datos EN VIVO de accs, no la foto congelada
-    // Busca por id; si no matchea (id viejo/desincronizado), busca por nombre exacto y repara la liga
-    const cuentasVinculadas = (red.cuentas || []).map(c => {
-      let live = accs.find(a => String(a.id) === String(c.id));
-      if (!live && c.nombre) {
-        live = accs.find(a => (a.name||'').trim().toLowerCase() === c.nombre.trim().toLowerCase());
-        if (live) {
-          // Reparar la liga: actualizar el id guardado en la red para que coincida con el real
-          c.id = live.id;
-          redReparada = true;
+    // Generar filas de cuentas vinculadas — usando datos EN VIVO de accs
+    // AHORA: Busca tanto las guardadas en red.cuentas COMO las que tengan el mismo .red
+    const cuentasVinculadas = (() => {
+      const vistas = new Set();
+      const resultado = [];
+      
+      // Primero: cuentas explícitamente guardadas en red.cuentas
+      (red.cuentas || []).forEach(c => {
+        let live = accs.find(a => String(a.id) === String(c.id));
+        if (!live && c.nombre) {
+          live = accs.find(a => (a.name||'').trim().toLowerCase() === c.nombre.trim().toLowerCase());
+          if (live) c.id = live.id;
         }
-      }
-      if (!live) return { ...c, _borrada: true };
-      if (!live.red) { live.red = red.nombre; redReparada = true; }
-      return {
-        id: live.id,
-        nombre: live.name,
-        monto: live.amt,
-        rate: live.rate,
-        ddp: live.ddp,
-        estado: live.status,
-        _interes: interest(live)
-      };
-    });
+        if (!live) {
+          resultado.push({ ...c, _borrada: true });
+        } else {
+          if (!live.red) { live.red = red.nombre; redReparada = true; }
+          resultado.push({
+            id: live.id,
+            nombre: live.name,
+            monto: live.amt,
+            rate: live.rate,
+            ddp: live.ddp,
+            estado: live.status,
+            _interes: interest(live)
+          });
+          vistas.add(String(live.id));
+        }
+      });
+      
+      // Segundo: todas las cuentas en accs que tengan .red === red.nombre (captura duplicadas)
+      accs.forEach(acc => {
+        if(acc.red === red.nombre && !vistas.has(String(acc.id))) {
+          resultado.push({
+            id: acc.id,
+            nombre: acc.name,
+            monto: acc.amt,
+            rate: acc.rate,
+            ddp: acc.ddp,
+            estado: acc.status,
+            _interes: interest(acc)
+          });
+          vistas.add(String(acc.id));
+        }
+      });
+      
+      return resultado;
+    })();
     const filaCuentas = cuentasVinculadas.length > 0 ? cuentasVinculadas.map((c, cidx) => {
       if (c._borrada) {
         return `
