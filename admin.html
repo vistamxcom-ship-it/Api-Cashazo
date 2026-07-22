@@ -654,7 +654,7 @@ let nextClientNum = 1001; // Contador para números de cliente único (CLT-1001,
 const fm = (n,c='MXN') => c==='USD' ? '$'+Math.round(n).toLocaleString('en-US')+' USD' : '$'+Math.round(n).toLocaleString('es-MX')+' MXN';
 
 // MENSUALIDAD (lo que pagan cada mes) = capital * tasa / 100
-const monthlyPayment = a => { if(a.type==='acuerdo'||a.type==='activo') return 0; return Math.round(a.amt*a.rate/100); };
+const monthlyPayment = a => { return Math.round(a.amt*a.rate/100); };
 
 // DEUDA TOTAL (saldo pendiente del préstamo)
 const totalDebt = a => { 
@@ -2197,6 +2197,7 @@ function renderMsg(){
   
   // Separar en etapas
   const upcoming = ordenadasPorFecha.filter(a => a.ddp && dUntil(a.ddp,a) <= 5 && dUntil(a.ddp,a) > 0);
+  const today = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) === 0);
   const overdue = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) > 0);
 
   document.getElementById('pane-msg').innerHTML=`
@@ -2205,28 +2206,34 @@ function renderMsg(){
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">${d} día${d>1?'s':''}</span></div>
       <div class="wa-preview">${msgText(a,'recordatorio')}</div>
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','recordatorio')">📅 WA E1</button><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','sms-rec')">SMS</button></div>
-    </div>`;}).join(''):''}
+    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en 5 días</p>'}
+    <div class="sec">💫 etapa 2 — vencimiento (día de pago HOY)</div>
+    ${today.length?today.map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
+      <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">HOY VENCE (${a.ddp})</span></div>
+      <div class="wa-preview">${msgText(a,'cobro')}</div>
+      <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','cobro')">💫 WA E2</button></div>
+    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno vence hoy</p>'}
     <div class="sec">⚠️ etapa 3 — primer retraso (1–7 días)</div>
     ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-o">${d} día${d>1?'s':''} de retraso (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora')}</div>
       <div class="fr"><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','mora')">⚠️ WA E3</button></div>
-    </div>`;}).join(''):''}
+    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
     <div class="sec">🚨 etapa 4 — retraso importante (8–30 días)</div>
     ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS (DDP: ${a.ddp})</span>${d>=15?'<span class="bx bx-r">⚠️ CONTACTAR REFS</span>':''}</div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora acum: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora-grave')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','mora-grave')">🚨 WA E4</button></div>
-    </div>`;}).join(''):''}
+    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
     <div class="sec">🔴 etapa 5 — último aviso (31+ días — CRÍTICO)</div>
     ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS — CRÍTICO (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Deuda: ${fm(deuda,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'ultimo-aviso')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','ultimo-aviso')">🔴 WA E5</button></div>
-    </div>`;}).join(''):''}
+    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en último aviso</p>'}
   `;
 }
 
@@ -3546,250 +3553,163 @@ Paga para evitar mora. ¡Gracias!`;
 function renderRedes(){
   loadRedes();
   
-  // Generar filas de tabla CON CUENTAS VINCULADAS
-  let redReparada = false;
-  const tablasHTML = REDES.length ? REDES.map((red, idx) => {
-    const hayURL = red.enlace && red.enlace.startsWith('http');
-    const hayTel = red.enlace && /\d{10,}/.test(red.enlace.replace(/\D/g, ''));
-    const telNum = red.enlace ? red.enlace.replace(/\D/g, '') : '';
-    
-    // Generar filas de cuentas vinculadas — usando datos EN VIVO de accs
-    // AHORA: Busca tanto las guardadas en red.cuentas COMO las que tengan el mismo .red
-    const cuentasVinculadas = (() => {
-      const vistas = new Set();
-      const resultado = [];
-      
-      // Primero: cuentas explícitamente guardadas en red.cuentas
-      (red.cuentas || []).forEach(c => {
-        let live = accs.find(a => String(a.id) === String(c.id));
-        if (!live && c.nombre) {
-          live = accs.find(a => (a.name||'').trim().toLowerCase() === c.nombre.trim().toLowerCase());
-          if (live) c.id = live.id;
-        }
-        if (!live) {
-          resultado.push({ ...c, _borrada: true });
-        } else {
-          if (!live.red) { live.red = red.nombre; redReparada = true; }
-          resultado.push({
-            id: live.id,
-            nombre: live.name,
-            monto: live.amt,
-            rate: live.rate,
-            ddp: live.ddp,
-            estado: live.status,
-            _interes: interest(live)
-          });
-          vistas.add(String(live.id));
-        }
-      });
-      
-      // Segundo: todas las cuentas en accs que tengan .red === red.nombre (captura duplicadas)
-      accs.forEach(acc => {
-        if(acc.red === red.nombre && !vistas.has(String(acc.id))) {
-          resultado.push({
-            id: acc.id,
-            nombre: acc.name,
-            monto: acc.amt,
-            rate: acc.rate,
-            ddp: acc.ddp,
-            estado: acc.status,
-            _interes: interest(acc)
-          });
-          vistas.add(String(acc.id));
-        }
-      });
-      
-      return resultado;
-    })();
-    const filaCuentas = cuentasVinculadas.length > 0 ? cuentasVinculadas.map((c, cidx) => {
-      if (c._borrada) {
-        return `
-        <tr style="background:var(--bg3);border-left:3px solid var(--red)">
-          <td colspan="5" style="padding:8px 12px;font-size:11px;color:var(--t3)">
-            ⚠️ Cuenta eliminada (${c.nombre||'sin nombre'})
-            <button class="br" style="font-size:8px;padding:2px 5px;margin-left:8px" onclick="eliminarCuentaDeRed(${idx},'${c.id}')">✕ Quitar</button>
-          </td>
-        </tr>`;
-      }
-      return `
-        <tr style="background:var(--bg3);border-left:3px solid var(--pur)">
-          <td colspan="5" style="padding:0">
-            <div style="padding:8px 12px;font-size:11px">
-              <div style="display:grid;grid-template-columns:150px 80px 80px 80px 80px auto;gap:8px;align-items:center">
-                <div><strong style="color:var(--grn)">📌 ${c.nombre}</strong></div>
-                <div style="font-size:10px;color:var(--t3)">💵 $${c.monto}</div>
-                <div style="font-size:10px;color:var(--t3)">📊 ${c.rate}%</div>
-                <div style="font-size:10px;color:var(--grn)">💰 $${c._interes}</div>
-                <div style="font-size:10px;color:var(--t3)">📅 ${c.ddp}</div>
-                <div style="display:flex;gap:4px;align-items:center">
-                  <span style="font-size:9px;color:var(--t3)">✅ ${c.estado}</span>
-                  <button class="br" style="font-size:8px;padding:2px 5px" onclick="eliminarCuentaDeRed(${idx},'${c.id}')">✕ Remover</button>
-                </div>
-              </div>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('') : '';
-    
-    return `
-      <tr>
-        <td>
-          <input type="text" value="${red.nombre || ''}" data-redes-idx="${idx}" data-redes-field="nombre"
-            style="width:100%;padding:6px 8px;border:1px solid var(--brd2);border-radius:4px;background:var(--bg3);color:var(--t1);font-size:12px">
-        </td>
-        <td>
-          <select data-redes-idx="${idx}" data-redes-field="plataforma"
-            style="width:100%;padding:6px 8px;border:1px solid var(--brd2);border-radius:4px;background:var(--bg3);color:var(--t1);font-size:12px">
-            <option value="">--</option>
-            <option value="WhatsApp" ${red.plataforma==='WhatsApp'?'selected':''}>WhatsApp</option>
-            <option value="Instagram" ${red.plataforma==='Instagram'?'selected':''}>Instagram</option>
-            <option value="TikTok" ${red.plataforma==='TikTok'?'selected':''}>TikTok</option>
-            <option value="Facebook" ${red.plataforma==='Facebook'?'selected':''}>Facebook</option>
-            <option value="Twitter" ${red.plataforma==='Twitter'?'selected':''}>Twitter / X</option>
-            <option value="Telegram" ${red.plataforma==='Telegram'?'selected':''}>Telegram</option>
-            <option value="YouTube" ${red.plataforma==='YouTube'?'selected':''}>YouTube</option>
-            <option value="Otro" ${red.plataforma==='Otro'?'selected':''}>Otro</option>
-          </select>
-        </td>
-        <td>
-          <input type="text" value="${red.enlace || ''}" data-redes-idx="${idx}" data-redes-field="enlace"
-            style="width:100%;padding:6px 8px;border:1px solid var(--brd2);border-radius:4px;background:var(--bg3);color:var(--t1);font-size:12px;font-family:var(--mono)">
-        </td>
-        <td>
-          <input type="text" value="${red.notas || ''}" data-redes-idx="${idx}" data-redes-field="notas"
-            style="width:100%;padding:6px 8px;border:1px solid var(--brd2);border-radius:4px;background:var(--bg3);color:var(--t1);font-size:12px">
-        </td>
-        <td>
-          <div class="fr" style="gap:4px">
-            ${hayURL ? `<button class="bs" style="font-size:9px;flex:1" onclick="window.open('${red.enlace}','_blank')">🔗 Abrir</button>` : ''}
-            ${hayTel ? `<button class="bs" style="font-size:9px;flex:1" onclick="window.location.href='tel:+52${telNum}'">📞 Llamar</button>` : ''}
-            <button class="bs" style="font-size:9px;flex:1" onclick="mostrarCuentasRed(${idx})">👥 ${cuentasVinculadas.length}</button>
-            <button class="br" style="font-size:9px;flex:1" onclick="eliminarRed(${idx})">✕</button>
-          </div>
-        </td>
-      </tr>
-      ${filaCuentas}
-    `;
-  }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:2rem">Sin redes registradas</td></tr>';
-
-  if (redReparada) {
-    saveRedes();
-    if (typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
-    console.log('✅ Ligas de Redes reparadas automáticamente (id desincronizado corregido)');
-  }
+  // EXPANDIR/CONTRAER REDES
+  let redesExpandidas = {};
   
-  // Calcular resumen de tarjetas (igual estilo que MXN) — usando datos VIVOS de accs, no snapshot viejo
-  // (usa los ids YA REPARADOS arriba, por eso este cálculo va DESPUÉS de construir tablasHTML)
-  const idsVinculados = new Set();
-  REDES.forEach(r=>(r.cuentas||[]).forEach(c=>idsVinculados.add(String(c.id))));
-  // Igual que MXN: no contar cuentas ya liquidadas
-  const cuentasVivasVinculadas = accs.filter(a=>idsVinculados.has(String(a.id))&&a.status!=='liquidado');
-  // Auto-reparar inconsistencias viejas: si está en una red pero a.red quedó vacío, corregirlo
-  let huboReparacion = false;
-  REDES.forEach(red => {
-    (red.cuentas||[]).forEach(c => {
-      const live = accs.find(a=>String(a.id)===String(c.id));
-      if(live && !live.red){ live.red = red.nombre; huboReparacion = true; }
+  // Agrupar cuentas por RED
+  const cuentasPorRed = {};
+  accs.forEach(a => {
+    if(a.red && a.status === 'activo') {
+      if(!cuentasPorRed[a.red]) cuentasPorRed[a.red] = [];
+      cuentasPorRed[a.red].push(a);
+    }
+  });
+  
+  // HEADER CON TOTALES
+  let totCuentas = 0;
+  let totInvertido = 0;
+  let totInteres = 0;
+  let totActivas = 0;
+  
+  Object.keys(cuentasPorRed).forEach(red => {
+    const cuentas = cuentasPorRed[red];
+    totCuentas += cuentas.length;
+    totActivas += cuentas.filter(c => c.status === 'activo').length;
+    cuentas.forEach(c => {
+      totInvertido += parseFloat(c.amt) || 0;
+      totInteres += interest(c);
     });
   });
-  if(huboReparacion && typeof persist!=='undefined' && persist.saveNow){ persist.saveNow(); }
-  const totalCuentasVinculadas = cuentasVivasVinculadas.length;
-  const montoVinculado = cuentasVivasVinculadas.reduce((s,a)=>s+(parseFloat(a.amt)||0),0);
-  const interesVinculado = cuentasVivasVinculadas.reduce((s,a)=>s+interest(a),0);
-  const activasVinculadas = cuentasVivasVinculadas.filter(a=>a.status==='activo').length;
-
+  
   const redesHTML = `
     <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:1.5rem">// redes sociales y colaboradores — gestión centralizada</div>
 
     <div class="mrow">
       <div class="mc"><div class="mc-l">Redes registradas</div><div class="mc-v">${REDES.length}</div></div>
-      <div class="mc"><div class="mc-l">Cuentas vinculadas</div><div class="mc-v">${totalCuentasVinculadas}</div></div>
-      <div class="mc"><div class="mc-l">Monto vinculado</div><div class="mc-v">${fm(montoVinculado,'MXN')}</div></div>
-      <div class="mc"><div class="mc-l">Interés a ganar</div><div class="mc-v" style="color:var(--grn)">${fm(interesVinculado,'MXN')}</div></div>
-      <div class="mc"><div class="mc-l">Activas</div><div class="mc-v">${activasVinculadas}</div></div>
+      <div class="mc"><div class="mc-l">Cuentas vinculadas</div><div class="mc-v">${totCuentas}</div></div>
+      <div class="mc"><div class="mc-l">Invertido total</div><div class="mc-v">${fm(totInvertido,'MXN')}</div></div>
+      <div class="mc"><div class="mc-l">Interés a ganar</div><div class="mc-v" style="color:var(--grn)">${fm(totInteres,'MXN')}</div></div>
+      <div class="mc"><div class="mc-l">Activas</div><div class="mc-v">${totActivas}</div></div>
     </div>
 
-    <!-- 🔧 DETECTAR DUPLICADAS -->
-    <div id="redes-duplicadas-alert" style="margin-bottom:1.5rem"></div>
-
-    <!-- FORMULARIO AGREGAR -->
-    <div style="background:var(--bg2);border:1px solid var(--brd);border-radius:10px;padding:1.5rem;margin-bottom:1.5rem">
-      <div style="font-size:11px;font-weight:700;color:var(--t1);margin-bottom:1rem">➕ NUEVA RED</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:1rem">
-        <div class="frow">
-          <label>Nombre/Usuario</label>
-          <input type="text" id="red-nombre" placeholder="@usuario" style="padding:9px 12px;border:1px solid var(--brd2);border-radius:7px;background:var(--bg3);color:var(--t1);font-size:13px">
-        </div>
-        <div class="frow">
-          <label>Plataforma</label>
-          <select id="red-plataforma" style="padding:9px 12px;border:1px solid var(--brd2);border-radius:7px;background:var(--bg3);color:var(--t1);font-size:13px">
-            <option value="">-- Seleccionar --</option>
-            <option value="WhatsApp">WhatsApp</option>
-            <option value="Instagram">Instagram</option>
-            <option value="TikTok">TikTok</option>
-            <option value="Facebook">Facebook</option>
-            <option value="Twitter">Twitter / X</option>
-            <option value="Telegram">Telegram</option>
-            <option value="YouTube">YouTube</option>
-            <option value="Otro">Otro</option>
-          </select>
-        </div>
-        <div class="frow">
-          <label>Enlace / Contacto</label>
-          <input type="text" id="red-enlace" placeholder="https://... o +52..." style="padding:9px 12px;border:1px solid var(--brd2);border-radius:7px;background:var(--bg3);color:var(--t1);font-size:13px">
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="frow">
-          <label>Notas (opcional)</label>
-          <input type="text" id="red-notas" placeholder="Cobrador, influencer, etc." style="padding:9px 12px;border:1px solid var(--brd2);border-radius:7px;background:var(--bg3);color:var(--t1);font-size:13px">
-        </div>
-        <div style="display:flex;align-items:flex-end;gap:8px">
-          <button class="bg" onclick="agregarRed()" style="flex:1;padding:9px 12px;border:none;border-radius:7px;background:var(--grn);color:#000;font-weight:600;cursor:pointer">💾 GUARDAR RED</button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- TABLA DE REDES -->
+    <!-- TABLA DE REDES EXPANDIBLE (IGUAL A COMISIONES) -->
     <div class="tcard">
       <table>
         <thead>
           <tr>
-            <th style="width:20%">Usuario</th>
-            <th style="width:15%">Plataforma</th>
-            <th style="width:25%">Contacto</th>
-            <th style="width:20%">Notas</th>
-            <th style="width:20%">Acciones</th>
+            <th>RED</th>
+            <th>CUENTAS</th>
+            <th>ACTIVAS</th>
+            <th>INVERTIDO</th>
+            <th>INTERÉS</th>
+            <th colspan="2">ACCIONES</th>
           </tr>
         </thead>
-        <tbody>
-          ${tablasHTML}
+        <tbody id="redes-tabla">
+          ${REDES.length ? REDES.map((red, idx) => {
+            const cuentas = cuentasPorRed[red.nombre] || [];
+            const cnt = cuentas.length;
+            const activas = cuentas.filter(c => c.status === 'activo').length;
+            
+            let montoInvertido = 0;
+            let totalInteres = 0;
+            cuentas.forEach(c => {
+              montoInvertido += parseFloat(c.amt) || 0;
+              totalInteres += interest(c);
+            });
+            
+            const expanded = redesExpandidas[red.nombre];
+            const btnExpand = cnt > 0 ? `<button class="bs" onclick="REDES_toggleExpand('${red.nombre}');" style="min-width:30px">${expanded ? '▼' : '▶'}</button>` : '—';
+            
+            let row = `<tr>
+              <td><strong>${red.nombre}</strong></td>
+              <td style="text-align:center"><span class="bx bx-g">${cnt}</span></td>
+              <td style="text-align:center"><small style="color:var(--t3)">${activas}/${cnt}</small></td>
+              <td style="text-align:right"><small style="color:var(--blu)"><strong>$</strong>${montoInvertido.toFixed(2)}</small></td>
+              <td style="text-align:right"><small style="color:var(--grn)"><strong>$</strong>${totalInteres.toFixed(2)}</small></td>
+              <td style="text-align:center">${btnExpand}</td>
+              <td style="text-align:center"><button class="br" onclick="eliminarRed(${idx})" style="font-size:11px;padding:5px 8px">×</button></td>
+            </tr>`;
+            
+            if(expanded && cuentas.length > 0){
+              const detalles = cuentas.map((c, cidx) => {
+                const monto = parseFloat(c.amt) || 0;
+                const rate = parseFloat(c.rate) || 0;
+                const totalInt = interest(c);
+                const estado = c.status === 'activo' ? '✅ ACTIVA' : '⚠️ INACTIVA';
+                const telDisplay = c.wa ? `📱 ${c.wa}` : '—';
+                
+                return `
+                <tr style="background:var(--bg3);opacity:0.95;border-left:3px solid var(--pur)">
+                  <td style="padding-left:40px">
+                    <div style="font-size:11px;font-weight:700;color:var(--t1)">${cidx+1}. ${c.name}</div>
+                    <div style="font-size:9px;color:var(--t3);margin-top:2px">${telDisplay}</div>
+                  </td>
+                  <td style="text-align:center">
+                    <div style="font-size:9px;color:var(--t3);margin-bottom:3px">ESTADO</div>
+                    <span class="bx" style="font-size:8px;background:${c.status==='activo'?'rgba(45,189,130,.15)':'rgba(212,147,42,.15)'};border-color:${c.status==='activo'?'rgba(45,189,130,.3)':'rgba(212,147,42,.3)'};color:${c.status==='activo'?'var(--grn)':'var(--amb)'}">${estado}</span>
+                  </td>
+                  <td style="text-align:center">
+                    <div style="font-size:9px;color:var(--t3);margin-bottom:3px">CAPITAL</div>
+                    <input type="number" value="${monto}" style="width:70px;padding:4px;background:var(--bg2);color:var(--blu);border:1px solid var(--t3);border-radius:4px;font-size:11px" oninput="REDES_guardarCuenta('${c.id}', 'amt', this.value)">
+                  </td>
+                  <td style="text-align:center">
+                    <div style="font-size:9px;color:var(--t3);margin-bottom:3px">%</div>
+                    <input type="number" value="${rate}" style="width:50px;padding:4px;background:var(--bg2);color:var(--grn);border:1px solid var(--t3);border-radius:4px;font-size:11px" step="0.01" oninput="REDES_guardarCuenta('${c.id}', 'rate', this.value)">
+                  </td>
+                  <td style="text-align:right">
+                    <div style="font-size:9px;color:var(--t3);margin-bottom:3px">INTERÉS</div>
+                    <span style="font-size:11px;color:var(--grn);font-family:var(--mono);font-weight:700">$${totalInt.toFixed(2)}</span>
+                  </td>
+                  <td style="text-align:center">
+                    <button class="bs" onclick="openPerfil('${c.id}')" style="font-size:9px;padding:5px 9px;min-width:45px">VER</button>
+                  </td>
+                  <td style="text-align:center">
+                    <button class="br" onclick="eliminarCuentaDeRed(${idx},'${c.id}')" style="font-size:11px;min-width:30px;padding:5px">×</button>
+                  </td>
+                </tr>`;
+              }).join('');
+              row += detalles;
+            }
+            
+            return row;
+          }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:20px">Sin redes registradas</td></tr>'}
         </tbody>
       </table>
     </div>
   `;
   
   document.getElementById('pane-red').innerHTML = redesHTML;
+}
+
+function REDES_toggleExpand(nombre){
+  // Usar sessionStorage para expandir/contraer sin guardar
+  const key = 'REDES_expanded_' + nombre;
+  const actual = sessionStorage.getItem(key) === 'true';
+  sessionStorage.setItem(key, !actual);
+  renderRedes();
+}
+
+function REDES_guardarCuenta(cuentaId, campo, valor){
+  const cuenta = accs.find(a => String(a.id) === String(cuentaId));
+  if(!cuenta) return;
   
-  // Renderizar detector de duplicadas
-  setTimeout(() => {
-    renderizarDuplicadas();
-  }, 50);
+  if(campo === 'amt' || campo === 'rate'){
+    valor = parseFloat(valor) || 0;
+  }
   
-  // Agregar event listeners a inputs
-  setTimeout(() => {
-    document.querySelectorAll('[data-redes-idx]').forEach(el => {
-      el.addEventListener('change', function(){
-        const idx = parseInt(this.getAttribute('data-redes-idx'));
-        const field = this.getAttribute('data-redes-field');
-        if(REDES[idx]) {
-          REDES[idx][field] = this.value;
-          saveRedes();
-        }
-      });
-    });
-  }, 100);
+  cuenta[campo] = valor;
+  
+  try{
+    const dataToSave = {accounts: accs, vendedores: vendedores};
+    localStorage.setItem('admin_v13_data', JSON.stringify(dataToSave));
+  }catch(e){}
+  
+  if(typeof persist !== 'undefined' && persist.saveNow){
+    persist.saveNow();
+  }
+  
+  renderRedes();
 }
 
 function eliminarRed(idx){
@@ -3865,7 +3785,7 @@ function agregarRed(){
     return;
   }
   
-  REDES.push({ nombre, plataforma, enlace, notas, cuentas: [], vendedor: '', balance: 0, entrada: 0, salida: 0, creadoEn: new Date().toLocaleDateString('es-MX') });
+  REDES.push({ nombre, plataforma, enlace, notas, cuentas: [], creadoEn: new Date().toLocaleDateString('es-MX') });
   saveRedes();
   
   // Limpiar
