@@ -3553,8 +3553,12 @@ Paga para evitar mora. ¡Gracias!`;
 function renderRedes(){
   loadRedes();
   
-  // EXPANDIR/CONTRAER REDES
+  // LEER ESTADO EXPANDIDO DEL SESSIONSTORE (IMPORTANTE!)
   let redesExpandidas = {};
+  REDES.forEach(red => {
+    const key = 'REDES_expanded_' + red.nombre;
+    redesExpandidas[red.nombre] = sessionStorage.getItem(key) === 'true';
+  });
   
   // Agrupar cuentas por RED
   const cuentasPorRed = {};
@@ -3683,10 +3687,9 @@ function renderRedes(){
 }
 
 function REDES_toggleExpand(nombre){
-  // Usar sessionStorage para expandir/contraer sin guardar
   const key = 'REDES_expanded_' + nombre;
   const actual = sessionStorage.getItem(key) === 'true';
-  sessionStorage.setItem(key, !actual);
+  sessionStorage.setItem(key, (!actual).toString());
   renderRedes();
 }
 
