@@ -2197,7 +2197,6 @@ function renderMsg(){
   
   // Separar en etapas
   const upcoming = ordenadasPorFecha.filter(a => a.ddp && dUntil(a.ddp,a) <= 5 && dUntil(a.ddp,a) > 0);
-  const today = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) === 0);
   const overdue = ordenadasPorFecha.filter(a => a.ddp && dOvr(a.ddp,a) > 0);
 
   document.getElementById('pane-msg').innerHTML=`
@@ -2206,34 +2205,28 @@ function renderMsg(){
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">${d} día${d>1?'s':''}</span></div>
       <div class="wa-preview">${msgText(a,'recordatorio')}</div>
       <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','recordatorio')">📅 WA E1</button><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','sms-rec')">SMS</button></div>
-    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en 5 días</p>'}
-    <div class="sec">💫 etapa 2 — vencimiento (día de pago HOY)</div>
-    ${today.length?today.map(a=>{return`<div class="alert-i a-ok" style="flex-direction:column;align-items:flex-start;gap:6px">
-      <div class="fr"><strong>${a.name}</strong><span class="bx bx-g">HOY VENCE (${a.ddp})</span></div>
-      <div class="wa-preview">${msgText(a,'cobro')}</div>
-      <div class="fr"><button class="bg" style="font-size:9px" onclick="sendMsg('${a.id}','cobro')">💫 WA E2</button></div>
-    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno vence hoy</p>'}
+    </div>`;}).join(''):''}
     <div class="sec">⚠️ etapa 3 — primer retraso (1–7 días)</div>
     ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=1&&d<=7;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const mens=interest(a);return`<div class="alert-i a-warn" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-o">${d} día${d>1?'s':''} de retraso (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora')}</div>
       <div class="fr"><button class="bs" style="font-size:9px" onclick="sendMsg('${a.id}','mora')">⚠️ WA E3</button></div>
-    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
+    </div>`;}).join(''):''}
     <div class="sec">🚨 etapa 4 — retraso importante (8–30 días)</div>
     ${overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).length?overdue.filter(a=>{const d=dOvr(a.ddp,a);return d>=8&&d<=30;}).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS (DDP: ${a.ddp})</span>${d>=15?'<span class="bx bx-r">⚠️ CONTACTAR REFS</span>':''}</div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Mensual: ${fm(mens,a.cur)} | Mora acum: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'mora-grave')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','mora-grave')">🚨 WA E4</button></div>
-    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en esta etapa</p>'}
+    </div>`;}).join(''):''}
     <div class="sec">🔴 etapa 5 — último aviso (31+ días — CRÍTICO)</div>
     ${overdue.filter(a=>dOvr(a.ddp,a)>=31).length?overdue.filter(a=>dOvr(a.ddp,a)>=31).map(a=>{const d=dOvr(a.ddp,a);const mc=multaAcumulada(a);const deuda=total(a);const mens=interest(a);return`<div class="alert-i a-red" style="flex-direction:column;align-items:flex-start;gap:6px;border-color:var(--red)">
       <div class="fr"><strong>${a.name}</strong><span class="bx bx-r">${d} DÍAS — CRÍTICO (DDP: ${a.ddp})</span></div>
       <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">Deuda: ${fm(deuda,a.cur)} | Mora: ${fm(mc,a.cur)}</div>
       <div class="wa-preview">${msgText(a,'ultimo-aviso')}</div>
       <div class="fr"><button class="br" style="font-size:9px" onclick="sendMsg('${a.id}','ultimo-aviso')">🔴 WA E5</button></div>
-    </div>`;}).join(''):'<p style="font-size:11px;color:var(--t3);font-family:var(--mono)">// ninguno en último aviso</p>'}
+    </div>`;}).join(''):''}
   `;
 }
 
@@ -3872,7 +3865,7 @@ function agregarRed(){
     return;
   }
   
-  REDES.push({ nombre, plataforma, enlace, notas, cuentas: [], creadoEn: new Date().toLocaleDateString('es-MX') });
+  REDES.push({ nombre, plataforma, enlace, notas, cuentas: [], vendedor: '', balance: 0, entrada: 0, salida: 0, creadoEn: new Date().toLocaleDateString('es-MX') });
   saveRedes();
   
   // Limpiar
