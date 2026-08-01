@@ -1399,11 +1399,29 @@ function renderCal(){
     const hasToday=isCurrentMonth&&cuentas.some(a=>a.ddp===TDAY);
     // 🔧 UPGRADE: Checar si YA PAGARON este mes
     const hasPaidThisMonth=cuentas.some(a=>paidThisMonth(a));
+    // 🔧 CRÍTICO: Detectar si hay DEUDA PENDIENTE del mes anterior (no pagaron el mes pasado)
+    const hasUnpaidDebt=cuentas.some(a=>{
+      if(!a.hist || a.hist.length===0) return true; // Sin historial = deuda
+      // Buscar si pagó el mes pasado
+      const lastMonth=new Date();
+      lastMonth.setMonth(lastMonth.getMonth()-1);
+      const lastMonthStart=new Date(lastMonth.getFullYear(),lastMonth.getMonth(),1);
+      const lastMonthEnd=new Date(lastMonth.getFullYear(),lastMonth.getMonth()+1,0,23,59,59);
+      const paidLastMonth=a.hist.some(h=>{
+        if(!['interes','parcial','total'].includes(h.tipo)) return false;
+        const partes=h.fecha.split('/');
+        const payDate=new Date(partes[2],partes[1]-1,partes[0]);
+        return payDate>=lastMonthStart&&payDate<=lastMonthEnd;
+      });
+      return !paidLastMonth; // Si NO pagó el mes pasado = tiene deuda
+    });
     
     let cls='cal-day';
     if(cuentas.length) cls+=' has-pay';
     if(isToday) cls+=' today';
-    if(hasOverdue&&!isToday) cls+=' overdue-day';
+    // 🔧 PRIORIDAD: Si tiene DEUDA PENDIENTE del mes anterior, marcar ROJO (no verde)
+    if(hasUnpaidDebt&&!hasPaidThisMonth) cls+=' overdue-day';
+    else if(hasOverdue&&!isToday) cls+=' overdue-day';
     if(hasPaidThisMonth) cls+=' has-paid';
     
     const dotCls=hasOverdue?'cal-dot cal-dot-r':hasPaidThisMonth?'cal-dot cal-dot-g-dark':hasToday?'cal-dot cal-dot-o':'cal-dot';
