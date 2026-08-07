@@ -646,16 +646,19 @@ let accs = [
   // Agrega tus cuentas aquí
 ];
 
-// Cargar datos del backup JSON si existe
-fetch('./backup-cashazo-2026-08-06.json')
-  .then(r => r.json())
-  .then(backup => {
+// Cargar backup JSON sincrónico
+try {
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', './backup-cashazo-2026-08-06.json', false);
+  xhr.send();
+  if (xhr.status === 200) {
+    const backup = JSON.parse(xhr.responseText);
     if (backup.accounts && Array.isArray(backup.accounts)) {
       accs = backup.accounts;
-      console.log('✅ Datos del backup cargados (' + accs.length + ' cuentas)');
+      console.log('✅ Backup: ' + accs.length + ' cuentas');
     }
-  })
-  .catch(e => console.log('📌 Sin backup, usando datos locales'));
+  }
+} catch(e) { }
 
 let nextClientNum = 1001; // Contador para números de cliente único (CLT-1001, CLT-1002, etc)
 
