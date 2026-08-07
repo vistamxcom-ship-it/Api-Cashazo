@@ -197,6 +197,14 @@ tr:hover td{background:var(--bg3)}
   .frow input,.frow select{font-size:16px!important;padding:11px 12px}
   .srch{font-size:16px!important}
 }
+/* ========== MORA ACUMULATIVA ========== */
+.mora-row-paid{background:rgba(45,189,130,.08)!important;border-left:3px solid var(--grn)}
+.mora-row-mora-1{background:rgba(212,147,42,.08)!important;border-left:3px solid var(--amb)}
+.mora-row-mora-3{background:rgba(224,82,82,.08)!important;border-left:3px solid var(--red)}
+.mora-badge{display:inline-flex;align-items:center;padding:2px 6px;border-radius:3px;font-size:9px;font-family:var(--mono);font-weight:600}
+.badge-mora-0{background:rgba(45,189,130,.2);color:var(--grn);border:1px solid rgba(45,189,130,.4)}
+.badge-mora-1{background:rgba(212,147,42,.2);color:var(--amb);border:1px solid rgba(212,147,42,.4)}
+.badge-mora-3{background:rgba(224,82,82,.2);color:var(--red);border:1px solid rgba(224,82,82,.4)}
 </style>
 </head>
 <body>
@@ -1613,20 +1621,27 @@ function exportICS(){
 function makeTable(list, showSplit){
   if(!list.length) return '<p style="font-size:11px;color:var(--t3);font-family:var(--mono);padding:.5rem 0">// sin cuentas</p>';
   
-  // Ordenar por DDP
-  const sorted = [...list].sort((a, b) => (parseInt(a.ddp) || 99) - (parseInt(b.ddp) || 99));
+  // 🔴 ORDENAR POR DÍA DE PAGO (DDP)
+  const sortedList = [...list].sort((a, b) => {
+    const diaA = parseInt(a.ddp) || 99;
+    const diaB = parseInt(b.ddp) || 99;
+    return diaA - diaB;
+  });
   
   return `<div class="tcard"><table><thead><tr>
     <th>Código</th><th>Cliente</th><th>Principal</th><th>Interés</th><th>Total</th>
     ${showSplit?'<th>Tu parte</th>':'<th>DDP</th>'}
-    <th>Estado</th><th>Deuda+Mora</th><th>Meses</th><th>Días</th><th>Multa/día</th><th>Acc.</th>
+    <th>Estado</th><th>Mora</th><th>Deuda+Mora</th><th>Días</th><th>Multa/día</th><th>Acc.</th>
   </tr></thead><tbody>`+
-  sorted.map(a=>{
+  sortedList.map(a=>{
     const ov=dOvr(a.ddp,a);const ut=dUntil(a.ddp,a);const md=multaDiaria(a);const mc=multaAcumulada(a);
-    const mora = obtenerDesgloseMora(a);
-    const rowClass = mora.deuda > a.amt * 2 ? ' style="background:rgba(224,82,82,.08);border-left:3px solid var(--red)"' : mora.deuda > 0 ? ' style="background:rgba(212,147,42,.08);border-left:3px solid var(--amb)"' : '';
+    const moraEstado = obtenerEstadoMora(a);
+    const deudaConMora = calcularDeudaTotal(a);
+    const moraMoneda = (moraEstado.meses || 0) * (a.amt || 0);
+    const rowClass = moraEstado.pagado ? 'mora-row-paid' : moraEstado.meses === 0 ? '' : moraEstado.meses < 3 ? 'mora-row-mora-1' : 'mora-row-mora-3';
+    const badgeClass = moraEstado.meses === 0 ? 'badge-mora-0' : moraEstado.meses < 3 ? 'badge-mora-1' : 'badge-mora-3';
     
-    return `<tr${rowClass}>
+    return `<tr class="${rowClass}">
       <td><span class="bx bx-b" style="font-size:9px">${cipherCode(a.id,a.ddp||1)}</span></td>
       <td>${a.name} <span class="tag ${a.cur==='USD'?'tag-usd':'tag-mxn'}">${a.cur}</span></td>
       <td style="font-family:var(--mono)">${fm(a.amt,a.cur)}</td>
@@ -1634,11 +1649,11 @@ function makeTable(list, showSplit){
       <td style="font-weight:600;font-family:var(--mono)">${fm(total(a),a.cur)}</td>
       ${showSplit?`<td style="color:var(--pur);font-family:var(--mono)">${a.splitAmt?fm(a.splitAmt,a.cur):'—'}</td>`:`<td style="font-family:var(--mono);font-weight:600">${a.ddp||'—'}</td>`}
       <td><span class="bx ${a.status==='activo'?'bx-g':a.status==='liquidado'?'bx-gr':'bx-r'}">${a.status.toUpperCase()}</span></td>
-      <td style="font-weight:600;font-family:var(--mono);font-size:11px;color:${mora.deuda > 0 ? 'var(--red)' : 'var(--grn)'}">${fm(mora.deuda || 0, a.cur)}<br><small style="color:var(--t3);font-size:9px">(P:${fm(mora.principal || 0, a.cur)} + M:${fm(mora.mora || 0, a.cur)})</small></td>
-      <td style="font-family:var(--mono);font-size:10px;text-align:center"><span style="background:${mora.meses > 2 ? 'rgba(224,82,82,.2)' : mora.meses > 0 ? 'rgba(212,147,42,.2)' : 'rgba(45,189,130,.2)'};color:${mora.meses > 2 ? 'var(--red)' : mora.meses > 0 ? 'var(--amb)' : 'var(--grn)'};padding:2px 6px;border-radius:3px">${mora.meses}</span></td>
+      <td><span class="mora-badge ${badgeClass}">${moraEstado.meses} meses</span></td>
+      <td style="font-weight:600;font-family:var(--mono);font-size:11px">${fm(deudaConMora,a.cur)}<br><small style="color:var(--t3)">(${moraMoneda>0?'+ '+fm(moraMoneda,a.cur):'-'})</small></td>
       <td style="font-family:var(--mono);font-size:10px">${ov>0?`<span style="color:var(--red)">${ov}d${mc>0?' +'+fm(mc,a.cur):''}</span>`:(a.ddp?`${ut}d`:'-')}</td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--amb)">${md>0?fm(md,a.cur):'—'}</td>
-      <td><div class="fr"><button class="bs" style="font-size:9px" onclick="openPerfil('${a.id}')">VER</button><button class="bg" style="font-size:9px" onclick="openPago('${a.id}','${curPane}')">PAGO</button><button class="bs" style="font-size:8px" onclick="mostrarDetallesMora('${a.id}')">📊</button>${(a.sms||a.wa)?`<button class="bs" style="font-size:9px" onclick="llamar('${a.id}')">📞</button>`:""}</div></td>
+      <td><div class="fr"><button class="bs" style="font-size:9px" onclick="openPerfil('${a.id}')">VER</button><button class="bg" style="font-size:9px" onclick="openPago('${a.id}','${curPane}')">PAGO</button>${(a.sms||a.wa)?`<button class="bs" style="font-size:9px" onclick="llamar('${a.id}')">📞</button>`:""}</div></td>
     </tr>`;
   }).join('')+'</tbody></table></div>';
 }
@@ -3161,8 +3176,8 @@ function guardarPago(id){
   if(a.type==='acuerdo'&&tipo==='parcial'){a.pagosMade=(a.pagosMade||0)+1;if(a.pagosMade>=a.totalPagos)a.status='liquidado';}
   if(tipo==='interes') a.meses=(a.meses||0)+1;
   
-  // 🔴 RECALCULAR MORA
-  recalcularMora(a);
+  // 🔴 REGISTRAR PAGO EN MORA (SISTEMA GLOBAL)
+  registrarPagoMora(a.id);
   
   // GUARDAR A localStorage Y BD
   try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
@@ -3170,7 +3185,7 @@ function guardarPago(id){
   // FORZAR GUARDAR EN SUPABASE
   if(persist && persist.saveNow) {
     persist.saveNow();
-    console.log('✅ Pago registrado:', tipo, '→', monto, 'para', a.name, '| Mora recalculada');
+    console.log('✅ Pago registrado:', tipo, '→', monto, 'para', a.name, '| Mora actualizada');
   } else {
     console.warn('⚠️ persist.saveNow no disponible');
   }
@@ -6447,203 +6462,118 @@ accs.forEach(a => {
 try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
 
 // ============================================================
-// 🔴 SISTEMA DE MORA CON CÁLCULO DIARIO (SIN PERDER NADA)
+// 🔴 SISTEMA GLOBAL DE MORA ACUMULATIVA
 // ============================================================
 
-/**
- * ESTRUCTURA: cuenta.moraPorMes = {
- *   "2026-07": {
- *     principal: 3000,
- *     pagado: 0,
- *     falta: 3000,
- *     diasSinPagar: 31,
- *     moraDaily: 100,          // $3000/30 = $100/día
- *     moraAcumulada: 3100,     // $100 × 31 días
- *     totalMes: 6100,          // 3000 + 3100
- *     pagos: [],
- *     estado: "impago"
- *   }
- * }
- */
-
-function calcularMoraDiaria(monto) {
-  return Math.ceil((monto / 30) * 100) / 100;
-}
-
-function calcularDiasSinPagar(ddp, mesStr, ahora = new Date()) {
-  const [año, mes] = mesStr.split('-');
-  const vencimiento = new Date(parseInt(año), parseInt(mes) - 1, parseInt(ddp));
-  if (ahora < vencimiento) return 0;
-  return Math.floor((ahora - vencimiento) / (1000 * 60 * 60 * 24));
-}
-
-function inicializarMoraDetallada() {
+// Inicializar estructura de mora en cada cuenta
+function inicializarMora() {
   const ahora = new Date();
-  accs.forEach(c => {
-    if (!c.moraPorMes) c.moraPorMes = {};
-    if (!c.moraTotal) c.moraTotal = { deudaAcumulada: 0, principalTotal: 0, moraTotal: 0, ultimoPago: null };
-    recalcularMora(c);
+  const mesActual = ahora.getMonth();
+  const añoActual = ahora.getFullYear();
+  
+  accs.forEach(cuenta => {
+    if (!cuenta.mora) {
+      cuenta.mora = {
+        meses: 0,           // Cuántos meses de mora
+        ultimoMes: mesActual,
+        ultimoAño: añoActual,
+        historial: []       // [{mes, año, pagado, fechaPago}]
+      };
+    }
+    
+    // Verificar reset mensual
+    if (cuenta.mora.ultimoMes !== mesActual || cuenta.mora.ultimoAño !== añoActual) {
+      // Cambió de mes
+      if (cuenta.mora.historial.length === 0) {
+        // Primer mes
+        cuenta.mora.historial.push({
+          mes: mesActual,
+          año: añoActual,
+          pagado: false,
+          fechaPago: null
+        });
+      } else {
+        const últimoReg = cuenta.mora.historial[cuenta.mora.historial.length - 1];
+        
+        // Si el mes anterior NO se pagó, acumular mora
+        if (!últimoReg.pagado) {
+          cuenta.mora.meses++;
+        } else {
+          // Si pagó, reset de mora
+          cuenta.mora.meses = 0;
+        }
+        
+        // Crear registro para el nuevo mes
+        cuenta.mora.historial.push({
+          mes: mesActual,
+          año: añoActual,
+          pagado: false,
+          fechaPago: null
+        });
+      }
+      
+      cuenta.mora.ultimoMes = mesActual;
+      cuenta.mora.ultimoAño = añoActual;
+    }
   });
+  
   guardarDatos();
 }
 
-function recalcularMora(cuenta) {
+// Registrar pago de una cuenta
+function registrarPagoMora(cuentaId) {
+  const cuenta = accs.find(c => String(c.id) === String(cuentaId));
+  if (!cuenta || !cuenta.mora) return false;
+  
   const ahora = new Date();
-  const principal = parseFloat(cuenta.amt) || 0;
-  const moraDiaria = calcularMoraDiaria(principal);
-  const ddp = parseInt(cuenta.ddp) || 15;
+  const mesActual = ahora.getMonth();
+  const añoActual = ahora.getFullYear();
   
-  let deudaAcum = 0, princAcum = 0, moraAcum = 0, ultimoPago = null;
-  const pagosPorMes = {};
-  
-  // Agrupar pagos
-  if (cuenta.hist) {
-    cuenta.hist.forEach(p => {
-      if (p.fecha) {
-        const [d, m, a] = p.fecha.split('/');
-        const mesStr = `${a}-${String(m).padStart(2, '0')}`;
-        if (!pagosPorMes[mesStr]) pagosPorMes[mesStr] = [];
-        pagosPorMes[mesStr].push(p);
-        ultimoPago = p.fecha;
-      }
-    });
+  // Buscar el registro del mes actual
+  let regMes = cuenta.mora.historial.find(r => r.mes === mesActual && r.año === añoActual);
+  if (!regMes) {
+    regMes = { mes: mesActual, año: añoActual, pagado: false, fechaPago: null };
+    cuenta.mora.historial.push(regMes);
   }
   
-  // Crear registros para cada mes
-  const inicio = new Date(cuenta.fechaInicio || cuenta.creadoEn);
-  let mesActual = new Date(inicio);
+  // Marcar como pagado
+  regMes.pagado = true;
+  regMes.fechaPago = new Date().toISOString().split('T')[0];
   
-  while (mesActual <= ahora) {
-    const mesStr = `${mesActual.getFullYear()}-${String(mesActual.getMonth() + 1).padStart(2, '0')}`;
-    
-    let totalPagado = 0;
-    if (pagosPorMes[mesStr]) {
-      totalPagado = pagosPorMes[mesStr].reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
-    }
-    
-    const falta = Math.max(0, principal - totalPagado);
-    let diasSinPagar = 0;
-    
-    if (falta > 0) {
-      diasSinPagar = calcularDiasSinPagar(ddp, mesStr, ahora);
-    }
-    
-    const mora = Math.round(moraDiaria * diasSinPagar * 100) / 100;
-    const total = falta + mora;
-    
-    cuenta.moraPorMes[mesStr] = {
-      principal,
-      pagado: totalPagado,
-      falta,
-      ddp,
-      diasSinPagar,
-      moraDaily: Math.round(moraDiaria * 100) / 100,
-      moraAcumulada: mora,
-      totalMes: total,
-      pagos: pagosPorMes[mesStr] || [],
-      estado: totalPagado >= principal ? 'pagado' : totalPagado > 0 ? 'parcial' : 'impago',
-      ultimoCalculo: new Date().toISOString().split('T')[0]
-    };
-    
-    if (falta > 0 || diasSinPagar > 0) {
-      deudaAcum += total;
-      princAcum += falta;
-      moraAcum += mora;
-    }
-    
-    mesActual.setMonth(mesActual.getMonth() + 1);
-  }
+  // Reset de mora si pagó completo
+  cuenta.mora.meses = 0;
   
-  cuenta.moraTotal = {
-    deudaAcumulada: Math.round(deudaAcum * 100) / 100,
-    principalTotal: Math.round(princAcum * 100) / 100,
-    moraTotal: Math.round(moraAcum * 100) / 100,
-    mesesAfectados: Object.values(cuenta.moraPorMes).filter(m => m.falta > 0).length,
-    ultimoPago
-  };
+  guardarDatos();
+  return true;
 }
 
-function obtenerDesgloseMora(cuenta) {
-  const desglose = [];
-  const meses = Object.keys(cuenta.moraPorMes || {}).sort();
+// Obtener estado de mora de una cuenta
+function obtenerEstadoMora(cuenta) {
+  if (!cuenta.mora) return { meses: 0, estado: '✅', color: 'grn', pagado: false };
   
-  meses.forEach(mesStr => {
-    const m = cuenta.moraPorMes[mesStr];
-    if (m.falta > 0 || m.diasSinPagar > 0) {
-      desglose.push({
-        mes: mesStr,
-        principal: m.principal,
-        pagado: m.pagado,
-        falta: m.falta,
-        diasSinPagar: m.diasSinPagar,
-        moraDiaria: m.moraDaily,
-        moraAcumulada: m.moraAcumulada,
-        totalMes: m.totalMes,
-        estado: m.estado,
-        resumen: `${mesStr}: Principal $${m.principal.toFixed(2)} + Mora ($${m.moraDaily.toFixed(2)}/día × ${m.diasSinPagar}d = $${m.moraAcumulada.toFixed(2)}) = $${m.totalMes.toFixed(2)}`
-      });
-    }
-  });
+  const ahora = new Date();
+  const mesActual = ahora.getMonth();
+  const añoActual = ahora.getFullYear();
+  
+  const regMes = cuenta.mora.historial.find(r => r.mes === mesActual && r.año === añoActual);
   
   return {
-    cliente: cuenta.name,
-    deudaTotal: cuenta.moraTotal.deudaAcumulada,
-    principal: cuenta.moraTotal.principalTotal,
-    mora: cuenta.moraTotal.moraTotal,
-    meses: desglose.length,
-    desglose,
-    resumen: `${cuenta.name}: Deuda total $${cuenta.moraTotal.deudaAcumulada.toFixed(2)} (Principal $${cuenta.moraTotal.principalTotal.toFixed(2)} + Mora $${cuenta.moraTotal.moraTotal.toFixed(2)}) en ${desglose.length} mes(es). Último pago: ${cuenta.moraTotal.ultimoPago || 'Nunca'}`
+    meses: cuenta.mora.meses || 0,
+    pagado: regMes?.pagado || false,
+    estado: regMes?.pagado ? '✅ PAGADO' : cuenta.mora.meses === 0 ? '⏳ PENDIENTE' : cuenta.mora.meses < 3 ? '⚠️ MORA' : '🔴 MOROSO',
+    color: regMes?.pagado ? 'grn' : cuenta.mora.meses === 0 ? 'amb' : cuenta.mora.meses < 3 ? 'amb' : 'red'
   };
 }
 
-inicializarMoraDetallada();
-console.log('✅ SISTEMA DE MORA DIARIA ACTIVADO - Todo guardado, nada se borra');
-
-// Mostrar detalles ultra detallados de mora
-function mostrarDetallesMora(cuentaId) {
-  const cuenta = accs.find(c => String(c.id) === String(cuentaId));
-  if (!cuenta) { alert('❌ Cliente no encontrado'); return; }
-  
-  const mora = obtenerDesgloseMora(cuenta);
-  let html = `
-📊 DETALLES DE MORA - ${cuenta.name}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RESUMEN GENERAL:
-  Deuda Total:  $${mora.deuda.toFixed(2)}
-  ├─ Principal: $${mora.principal.toFixed(2)}
-  └─ Mora:      $${mora.mora.toFixed(2)}
-  
-  Meses Afectados: ${mora.meses}
-  Último Pago: ${mora.ultimoPago || 'NUNCA'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DESGLOSE MES A MES:
-`;
-  
-  mora.desglose.forEach((m, i) => {
-    html += `
-📅 ${m.mes} (Estado: ${m.estado.toUpperCase()})
-   Principal: $${m.principal.toFixed(2)}
-   Pagado:    $${m.pagado.toFixed(2)}
-   Falta:     $${m.falta.toFixed(2)}
-   
-   Mora Diaria: $${m.moraDiaria.toFixed(2)}/día
-   Días Sin Pagar: ${m.diasSinPagar}
-   Mora Acumulada: $${m.moraAcumulada.toFixed(2)}
-   ────────────────────
-   TOTAL MES: $${m.totalMes.toFixed(2)}
-`;
-  });
-  
-  html += `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${mora.resumen}
-`;
-  
-  alert(html);
+// Calcular deuda total (mensualidad + mora)
+function calcularDeudaTotal(cuenta) {
+  const monto = parseFloat(cuenta.amt) || 0;
+  const meses = (cuenta.mora?.meses || 0);
+  return monto * (1 + meses);  // Mensualidad actual + meses de mora
 }
-</script>
+
+inicializarMora();
+console.log('✅ Admin v18 MORA GLOBAL iniciado - Sistema de mora acumulativa activado');</script>
 <script>
 // ============================================================
 // SINCRONIZACIÓN EN VIVO CON SUPABASE (vía /sync en este mismo servidor)
