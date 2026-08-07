@@ -646,20 +646,6 @@ let accs = [
   // Agrega tus cuentas aquí
 ];
 
-// Cargar backup JSON sincrónico
-try {
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', './backup-cashazo-2026-08-06.json', false);
-  xhr.send();
-  if (xhr.status === 200) {
-    const backup = JSON.parse(xhr.responseText);
-    if (backup.accounts && Array.isArray(backup.accounts)) {
-      accs = backup.accounts;
-      console.log('✅ Backup: ' + accs.length + ' cuentas');
-    }
-  }
-} catch(e) { }
-
 let nextClientNum = 1001; // Contador para números de cliente único (CLT-1001, CLT-1002, etc)
 
 // ============================================================
@@ -2849,34 +2835,10 @@ function openPerfil(id){
             <div><span style="color:var(--t2)">Capital</span><br><span style="font-size:12px;font-weight:bold;color:var(--t1);font-family:var(--mono)">${fm(a.amt,a.cur)}</span></div>
             <div><span style="color:var(--t2)">Interés mensual (${a.rate}%)</span><br><span style="font-size:12px;font-weight:bold;color:var(--grn);font-family:var(--mono)">+${fm(Math.round(a.amt*a.rate/100),a.cur)}</span></div>
           </div>
-          
-          ${(() => {
-            const mora = obtenerDesgloseMora(a);
-            if (mora.deuda > 0) {
-              return `
-                <div style="border-top:1px solid rgba(224,82,82,.2);padding-top:6px;background:rgba(224,82,82,.15);border-radius:6px;padding:8px;margin-top:6px">
-                  <div style="font-size:9px;color:var(--red);font-family:var(--mono);font-weight:600;margin-bottom:6px">🔴 MORA ACUMULADA</div>
-                  ${mora.desglose.map(m => `
-                    <div style="font-size:9px;color:var(--t3);margin:2px 0;display:flex;justify-content:space-between;font-family:var(--mono)">
-                      <span>${m.mes}: ${m.diasSinPagar}d × ${fm(m.moraDiaria, a.cur)}/d</span>
-                      <span style="color:var(--red);font-weight:600">${fm(m.moraAcumulada, a.cur)}</span>
-                    </div>
-                  `).join('')}
-                  <div style="border-top:1px solid rgba(224,82,82,.2);padding-top:4px;margin-top:4px;font-size:10px;display:flex;justify-content:space-between;font-weight:600">
-                    <span style="color:var(--amb)">Mora total:</span>
-                    <span style="color:var(--red)">${fm(mora.mora, a.cur)}</span>
-                  </div>
-                </div>
-              `;
-            }
-            return '';
-          })()}
-          
           ${dOvr(a.ddp,a)>0?`<div style="border-top:1px solid rgba(224,82,82,.2);padding-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px">
             <div><span style="color:var(--amb)">Mora diaria (capital/30)</span><br><span style="font-size:11px;font-weight:bold;color:var(--amb);font-family:var(--mono)">+${fm(Math.round(a.amt/30),a.cur)}/día</span></div>
-            <div><span style="color:var(--amb)">Días en retraso</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">${dOvr(a.ddp,a)}d</span></div>
+            <div><span style="color:var(--amb)">Mora acumulada (${dOvr(a.ddp,a)}d)</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">+${fm(Math.round(a.amt/30)*dOvr(a.ddp,a),a.cur)}</span></div>
           </div>`:''}
-          
           <div style="border-top:1px solid rgba(224,82,82,.3);margin-top:6px;padding-top:8px;display:grid;grid-template-columns:1fr;gap:0">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:11px;color:var(--t3);font-weight:600">TOTAL ADEUDADO</span>
@@ -6520,20 +6482,6 @@ function inicializarMoraDetallada() {
   accs.forEach(c => {
     if (!c.moraPorMes) c.moraPorMes = {};
     if (!c.moraTotal) c.moraTotal = { deudaAcumulada: 0, principalTotal: 0, moraTotal: 0, ultimoPago: null };
-    
-    // IMPORTANTE: Si no tiene fecha de inicio, usar creadoEn o hoy - 1 año
-    if (!c.fechaInicio) {
-      if (c.creadoEn) {
-        const [d, m, a] = c.creadoEn.split('/');
-        c.fechaInicio = `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      } else {
-        // Por defecto: 1 año atrás
-        const hace1año = new Date(ahora);
-        hace1año.setFullYear(hace1año.getFullYear() - 1);
-        c.fechaInicio = hace1año.toISOString().split('T')[0];
-      }
-    }
-    
     recalcularMora(c);
   });
   guardarDatos();
@@ -6549,7 +6497,7 @@ function recalcularMora(cuenta) {
   const pagosPorMes = {};
   
   // Agrupar pagos
-  if (cuenta.hist && cuenta.hist.length > 0) {
+  if (cuenta.hist) {
     cuenta.hist.forEach(p => {
       if (p.fecha) {
         const [d, m, a] = p.fecha.split('/');
@@ -6561,22 +6509,8 @@ function recalcularMora(cuenta) {
     });
   }
   
-  // Convertir fechaInicio a Date
-  let inicio;
-  if (typeof cuenta.fechaInicio === 'string') {
-    if (cuenta.fechaInicio.includes('-')) {
-      // Formato YYYY-MM-DD
-      inicio = new Date(cuenta.fechaInicio);
-    } else {
-      // Formato DD/MM/YYYY
-      const [d, m, a] = cuenta.fechaInicio.split('/');
-      inicio = new Date(`${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
-    }
-  } else {
-    inicio = new Date(cuenta.creadoEn || ahora);
-  }
-  
   // Crear registros para cada mes
+  const inicio = new Date(cuenta.fechaInicio || cuenta.creadoEn);
   let mesActual = new Date(inicio);
   
   while (mesActual <= ahora) {
@@ -6630,9 +6564,6 @@ function recalcularMora(cuenta) {
 }
 
 function obtenerDesgloseMora(cuenta) {
-  // Inicializar si no existe
-  if (!cuenta.moraPorMes) recalcularMora(cuenta);
-  
   const desglose = [];
   const meses = Object.keys(cuenta.moraPorMes || {}).sort();
   
@@ -6654,19 +6585,14 @@ function obtenerDesgloseMora(cuenta) {
     }
   });
   
-  const moraData = cuenta.moraTotal || { deudaAcumulada: 0, principalTotal: 0, moraTotal: 0, ultimoPago: null };
-  
   return {
     cliente: cuenta.name,
-    deuda: moraData.deudaAcumulada || 0,
-    principal: moraData.principalTotal || 0,
-    mora: moraData.moraTotal || 0,
+    deudaTotal: cuenta.moraTotal.deudaAcumulada,
+    principal: cuenta.moraTotal.principalTotal,
+    mora: cuenta.moraTotal.moraTotal,
     meses: desglose.length,
-    ultimoPago: moraData.ultimoPago,
     desglose,
-    resumen: desglose.length > 0 
-      ? `${cuenta.name}: Deuda total $${moraData.deudaAcumulada.toFixed(2)} (Principal $${moraData.principalTotal.toFixed(2)} + Mora $${moraData.moraTotal.toFixed(2)}) en ${desglose.length} mes(es). Último pago: ${moraData.ultimoPago || 'Nunca'}`
-      : `${cuenta.name}: Sin deuda pendiente`
+    resumen: `${cuenta.name}: Deuda total $${cuenta.moraTotal.deudaAcumulada.toFixed(2)} (Principal $${cuenta.moraTotal.principalTotal.toFixed(2)} + Mora $${cuenta.moraTotal.moraTotal.toFixed(2)}) en ${desglose.length} mes(es). Último pago: ${cuenta.moraTotal.ultimoPago || 'Nunca'}`
   };
 }
 
