@@ -6800,6 +6800,48 @@ ${mora.resumen}
 
   console.log('✅ Sincronización en vivo con Supabase activada (cada 15s)');
 })();
+
+// ============================================================
+// CARGAR Y APLICAR BACKUP JSON
+// ============================================================
+(async function initBackup() {
+  try {
+    const response = await fetch('./backup-cashazo-2026-08-06.json');
+    if (!response.ok) throw new Error('No se encontró el backup');
+    
+    const backup = await response.json();
+    console.log('✅ Backup JSON cargado');
+    
+    if (backup.accounts && Array.isArray(backup.accounts)) {
+      // Reemplazar accs con datos del backup
+      accs = backup.accounts;
+      console.log('✅ Datos del backup aplicados (' + accs.length + ' cuentas)');
+      
+      // Calcular mora para cada cliente
+      accs.forEach(acc => {
+        if (!acc.mora) {
+          const dias = dOvr(acc.ddp, acc);
+          acc.mora = dias > 0 ? Math.round(acc.amt / 30) * dias : 0;
+        }
+      });
+      
+      console.log('✅ Mora calculada y corregida');
+      
+      // Guardar en localStorage
+      if (typeof persist !== 'undefined' && typeof persist.saveNow === 'function') {
+        persist.saveNow();
+        console.log('💾 Backup guardado en localStorage');
+      }
+      
+      // Re-renderizar la UI
+      if (typeof render === 'function') {
+        render();
+      }
+    }
+  } catch(err) {
+    console.warn('⚠️ Error cargando backup:', err.message);
+  }
+})();
 </script>
 </body>
 </html>
