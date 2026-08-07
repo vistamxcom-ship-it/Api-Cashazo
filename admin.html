@@ -1615,11 +1615,15 @@ function makeTable(list, showSplit){
   return `<div class="tcard"><table><thead><tr>
     <th>Código</th><th>Cliente</th><th>Principal</th><th>Interés</th><th>Total</th>
     ${showSplit?'<th>Tu parte</th>':'<th>DDP</th>'}
-    <th>Estado</th><th>Días</th><th>Multa/día</th><th>Acc.</th>
+    <th>Estado</th><th style="background:rgba(224,82,82,.2)">💰 DEUDA</th><th>Días</th><th>Multa/día</th><th>Acc.</th>
   </tr></thead><tbody>`+
   list.map(a=>{
     const ov=dOvr(a.ddp,a);const ut=dUntil(a.ddp,a);const md=multaDiaria(a);const mc=multaAcumulada(a);
-    return `<tr>
+    const mora = obtenerDesgloseMora(a);
+    const tieneDeuda = mora.deuda > 0;
+    const rowStyle = tieneDeuda ? 'background:rgba(224,82,82,.08);border-left:3px solid var(--red)' : '';
+    
+    return `<tr style="${rowStyle}">
       <td><span class="bx bx-b" style="font-size:9px">${cipherCode(a.id,a.ddp||1)}</span></td>
       <td>${a.name} <span class="tag ${a.cur==='USD'?'tag-usd':'tag-mxn'}">${a.cur}</span></td>
       <td style="font-family:var(--mono)">${fm(a.amt,a.cur)}</td>
@@ -1627,6 +1631,7 @@ function makeTable(list, showSplit){
       <td style="font-weight:600;font-family:var(--mono)">${fm(total(a),a.cur)}</td>
       ${showSplit?`<td style="color:var(--pur);font-family:var(--mono)">${a.splitAmt?fm(a.splitAmt,a.cur):'—'}</td>`:`<td style="font-family:var(--mono)">${a.ddp||'—'}</td>`}
       <td><span class="bx ${a.status==='activo'?'bx-g':a.status==='liquidado'?'bx-gr':'bx-r'}">${a.status.toUpperCase()}</span></td>
+      <td style="font-weight:600;font-family:var(--mono);color:${tieneDeuda?'var(--red)':'var(--grn)'};background:${tieneDeuda?'rgba(224,82,82,.15)':'transparent'};padding:6px;border-radius:4px">${tieneDeuda ? '🔴 $'+fm(mora.deuda,a.cur) : '✅ 0'}</td>
       <td style="font-family:var(--mono);font-size:10px">${ov>0?`<span style="color:var(--red)">${ov}d${mc>0?' +'+fm(mc,a.cur):''}</span>`:(a.ddp?`${ut}d`:'-')}</td>
       <td style="font-family:var(--mono);font-size:10px;color:var(--amb)">${md>0?fm(md,a.cur):'—'}</td>
       <td><div class="fr"><button class="bs" style="font-size:9px" onclick="openPerfil('${a.id}')">VER</button><button class="bg" style="font-size:9px" onclick="openPago('${a.id}','${curPane}')">PAGO</button>${(a.sms||a.wa)?`<button class="bs" style="font-size:9px" onclick="llamar('${a.id}')">📞</button>`:""}</div></td>
@@ -2829,10 +2834,40 @@ function openPerfil(id){
             <div><span style="color:var(--t2)">Capital</span><br><span style="font-size:12px;font-weight:bold;color:var(--t1);font-family:var(--mono)">${fm(a.amt,a.cur)}</span></div>
             <div><span style="color:var(--t2)">Interés mensual (${a.rate}%)</span><br><span style="font-size:12px;font-weight:bold;color:var(--grn);font-family:var(--mono)">+${fm(Math.round(a.amt*a.rate/100),a.cur)}</span></div>
           </div>
+          
+          ${(() => {
+            const mora = obtenerDesgloseMora(a);
+            if (mora.deuda > 0) {
+              return `
+                <div style="background:rgba(224,82,82,.2);border:1px solid rgba(224,82,82,.4);border-radius:6px;padding:8px;margin:8px 0">
+                  <div style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:600;margin-bottom:6px">🔴 DEUDA PENDIENTE (NO PAGÓ)</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;margin-bottom:6px">
+                    <div><span style="color:var(--t3)">Principal Adeudado</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(mora.principal, a.cur)}</span></div>
+                    <div><span style="color:var(--t3)">Mora Acumulada</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(mora.mora, a.cur)}</span></div>
+                  </div>
+                  <div style="border-top:1px solid rgba(224,82,82,.3);padding-top:6px">
+                    <div style="display:flex;justify-content:space-between;font-size:11px">
+                      <span style="color:var(--t3)">TOTAL DEUDA:</span>
+                      <span style="font-weight:bold;color:var(--red);font-family:var(--mono)">${fm(mora.deuda, a.cur)}</span>
+                    </div>
+                  </div>
+                  ${mora.desglose.length > 0 ? `
+                    <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(224,82,82,.2);font-size:9px;color:var(--t3)">
+                      <strong>Desglose:</strong>
+                      ${mora.desglose.map(m => `<div style="margin:3px 0">• ${m.mes}: ${m.estado.toUpperCase()} - Falta $${fm(m.falta, a.cur)}</div>`).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }
+            return '';
+          })()}
+          
           ${dOvr(a.ddp,a)>0?`<div style="border-top:1px solid rgba(224,82,82,.2);padding-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px">
             <div><span style="color:var(--amb)">Mora diaria (capital/30)</span><br><span style="font-size:11px;font-weight:bold;color:var(--amb);font-family:var(--mono)">+${fm(Math.round(a.amt/30),a.cur)}/día</span></div>
             <div><span style="color:var(--amb)">Mora acumulada (${dOvr(a.ddp,a)}d)</span><br><span style="font-size:11px;font-weight:bold;color:var(--red);font-family:var(--mono)">+${fm(Math.round(a.amt/30)*dOvr(a.ddp,a),a.cur)}</span></div>
           </div>`:''}
+          
           <div style="border-top:1px solid rgba(224,82,82,.3);margin-top:6px;padding-top:8px;display:grid;grid-template-columns:1fr;gap:0">
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:11px;color:var(--t3);font-weight:600">TOTAL ADEUDADO</span>
