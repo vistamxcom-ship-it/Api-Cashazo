@@ -6589,9 +6589,11 @@ function recalcularMoraCompleta(cuenta) {
     
     const mes = cuenta.moraPorMes[mesStr];
     if (mes.falta > 0 || mes.diasSinPagar > 0) {
-      deudaAcum += mes.totalMes;
-      princAcum += mes.falta;
-      moraAcum += mes.moraAcumulada;
+      // ✅ ARREGLADO: Acumular principal COMPLETO del mes (no solo la falta)
+      // + mora que genera ese saldo impago
+      deudaAcum += mes.totalMes;  // principal + mora del mes
+      princAcum += mes.principal;  // principal COMPLETO (para saber cuánto es el core)
+      moraAcum += mes.moraAcumulada;  // mora generada
       mesesAfectados++;
     }
   });
