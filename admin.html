@@ -3517,7 +3517,7 @@ function openPerfil(id){
     <div class="tld">${h.fecha}</div>
     <div class="tlt" style="display:flex;align-items:center;gap:6px">
       ${h.tipo==='total'?'PAGO TOTAL':h.tipo==='interes'?'PAGO MENSUAL':'ABONO'} — ${fm(h.monto,a.cur)}
-      <button onclick="eliminarPago('${id},${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px;padding:0 2px" title="Eliminar">✕</button>
+      <button onclick="eliminarPago('${id}',${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px;padding:0 2px" title="Eliminar">✕</button>
     </div>
   </div>`).join(''):'<p style="font-size:10px;color:var(--t3);font-family:var(--mono)">// sin historial</p>';
 
@@ -4102,12 +4102,14 @@ function eliminarPago(accId, idx){
   }
   
   // Guardar cambios
-  if(typeof persist !== 'undefined') {
+  try { localStorage.setItem('cashazo_accounts',JSON.stringify(accs)); } catch(e) {}
+  if(typeof persist !== 'undefined' && persist.saveNow) {
     persist.saveNow();
   }
   
   openPerfil(accId);
   renderAll();
+  alert('✓ Pago eliminado correctamente');
 }
 
 // Array para guardar el historial de clientes eliminados
