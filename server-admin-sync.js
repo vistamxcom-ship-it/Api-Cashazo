@@ -35,6 +35,29 @@ app.use((req, res, next) => {
 app.use(express.static(__dirname, { etag: false, lastModified: false }));
 
 // ============================================================================
+// 🚀 OPTIMIZACIÓN: CACHE EN MEMORIA DEL SERVER (evita queries duplicadas)
+// ============================================================================
+const serverCache = {
+  data: null,
+  lastUpdate: 0,
+  CACHE_TTL: 5000  // 5 segundos (mucho menos que los 60s del client)
+};
+
+function isCacheValid() {
+  return serverCache.data && (Date.now() - serverCache.lastUpdate) < serverCache.CACHE_TTL;
+}
+
+function setCache(data) {
+  serverCache.data = data;
+  serverCache.lastUpdate = Date.now();
+}
+
+function clearCache() {
+  serverCache.data = null;
+  serverCache.lastUpdate = 0;
+}
+
+// ============================================================================
 // POST /sync — Guardar TODOS los datos en Supabase
 // ============================================================================
 app.post('/sync', async (req, res) => {
@@ -55,7 +78,6 @@ app.post('/sync', async (req, res) => {
     }
     
     // UPSERT a Supabase — siempre sobrescribe lo viejo con lo nuevo
-    // ✅ FIX: Si las columnas en Supabase son TEXT (no jsonb), guardar como JSON strings
     const { data, error } = await supabase
       .from('backup')
       .upsert(
@@ -80,7 +102,10 @@ app.post('/sync', async (req, res) => {
       });
     }
     
-    console.log('✅ Datos guardados en Supabase correctamente');
+    // 🚀 OPTIMIZACIÓN: Actualizar cache en memoria después de guardar
+    setCache({ accs, vendedores, cfg, redes });
+    
+    console.log('✅ Datos guardados en Supabase + cache actualizado');
     return res.json({ 
       success: true, 
       mensaje: 'Guardado en Supabase',
@@ -101,10 +126,28 @@ app.post('/sync', async (req, res) => {
 });
 
 // ============================================================================
-// GET /sync — Traer TODOS los datos desde Supabase
+// GET /sync — Traer datos con SMART CACHE (no siempre jala de Supabase)
 // ============================================================================
+// 🚀 CAMBIO CRÍTICO: Si el cache está fresco (<5s), devolver desde memoria
+// Si está viejo, jalar de Supabase una sola vez
 app.get('/sync', async (req, res) => {
   try {
+    // ✅ OPTIMIZACIÓN #1: Si cache está fresco, usarlo
+    if (isCacheValid()) {
+      console.log('⚡ Cache HIT — devolviendo desde memoria (sin query Supabase)');
+      return res.json({
+        accs: serverCache.data.accs,
+        vendedores: serverCache.data.vendedores,
+        cfg: serverCache.data.cfg,
+        redes: serverCache.data.redes,
+        source: 'memory-cache',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // ✅ OPTIMIZACIÓN #2: Si cache expiró, jalar de Supabase pero solo UNA VEZ
+    console.log('🔄 Cache MISS — consultando Supabase...');
+    
     const { data, error } = await supabase
       .from('backup')
       .select('*')
@@ -114,11 +157,16 @@ app.get('/sync', async (req, res) => {
     // Si no existe aún, devolver estructura vacía
     if (error && error.code === 'PGRST116') {
       console.log('ℹ️ No hay datos en Supabase aún, devolviendo vacío');
-      return res.json({ 
+      const emptyData = { 
         accs: [], 
         vendedores: {}, 
         cfg: {}, 
-        redes: [],
+        redes: []
+      };
+      setCache(emptyData);
+      return res.json({ 
+        ...emptyData,
+        source: 'empty',
         timestamp: new Date().toISOString()
       });
     }
@@ -129,23 +177,27 @@ app.get('/sync', async (req, res) => {
     }
     
     if (!data) {
-      return res.json({ 
+      const emptyData = { 
         accs: [], 
         vendedores: {}, 
         cfg: {}, 
-        redes: [],
+        redes: []
+      };
+      setCache(emptyData);
+      return res.json({ 
+        ...emptyData,
+        source: 'empty',
         timestamp: new Date().toISOString()
       });
     }
     
-    // ✅ FIX: Parsear datos si vienen como strings JSON (columnas TEXT en Supabase)
+    // ✅ OPTIMIZACIÓN #3: Parsear datos (mismo parsing que antes)
     let accsData = [];
     let vendedoresData = {};
     let configData = {};
     let redesData = [];
     
     try {
-      // Si accs_data es un string, parsearlo. Si ya es un array, dejarlo así
       accsData = typeof data.accs_data === 'string' 
         ? JSON.parse(data.accs_data) 
         : (data.accs_data || []);
@@ -181,7 +233,11 @@ app.get('/sync', async (req, res) => {
       redesData = [];
     }
     
-    console.log('✅ Datos traídos de Supabase:', {
+    // 🚀 OPTIMIZACIÓN #4: Guardar en cache después de jalar de Supabase
+    const cacheData = { accs: accsData, vendedores: vendedoresData, cfg: configData, redes: redesData };
+    setCache(cacheData);
+    
+    console.log('✅ Datos traídos de Supabase + cacheados:', {
       accs: Array.isArray(accsData) ? accsData.length : 0,
       redes: Array.isArray(redesData) ? redesData.length : 0,
       timestamp: new Date().toISOString()
@@ -193,6 +249,7 @@ app.get('/sync', async (req, res) => {
       cfg: configData,
       redes: redesData,
       updated_at: data.updated_at,
+      source: 'supabase-fresh',
       timestamp: new Date().toISOString()
     });
     
@@ -203,30 +260,40 @@ app.get('/sync', async (req, res) => {
 });
 
 // ============================================================================
-// GET /api/health — Verificar salud del servidor y Supabase
+// GET /api/health — Verificar salud del servidor
 // ============================================================================
+// 🚀 CAMBIO: health NO jala de Supabase cada vez (era otro request duplicado)
 app.get('/api/health', async (req, res) => {
   try {
-    // Intentar hacer un SELECT simple a Supabase para verificar conexión
-    const { error } = await supabase
-      .from('backup')
-      .select('count')
-      .limit(1);
+    // Simplificado: no hace SELECT a Supabase siempre
+    // Solo hace ping si lo requiere explícitamente con ?check=supabase
+    const checkSupabase = req.query.check === 'supabase';
     
-    const isConnected = !error;
+    let supabaseStatus = 'unknown';
+    
+    if (checkSupabase) {
+      try {
+        const { error } = await supabase
+          .from('backup')
+          .select('count')
+          .limit(1);
+        supabaseStatus = error ? 'disconnected' : 'connected';
+      } catch (err) {
+        supabaseStatus = 'error';
+      }
+    }
     
     return res.json({
-      status: isConnected ? 'ok' : 'error',
-      supabase: isConnected ? 'connected' : 'disconnected',
+      status: 'ok',
+      supabase: supabaseStatus,
+      cacheStatus: isCacheValid() ? 'valid' : 'expired',
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      error: error ? error.message : null
+      uptime: process.uptime()
     });
     
   } catch (err) {
     return res.json({
       status: 'error',
-      supabase: 'error',
       error: err.message,
       timestamp: new Date().toISOString()
     });
@@ -246,9 +313,10 @@ app.get('/', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔════════════════════════════════════════╗
-║      ✅ CASHAZO SERVER ONLINE          ║
+║   ✅ CASHAZO SERVER (OPTIMIZADO)       ║
 ║  URL: http://0.0.0.0:${PORT}                   
 ║  Supabase: ${SUPABASE_URL ? '🟢 Conectado' : '🔴 Error'}              
+║  Memory Cache: 5s TTL                  
 ║  Admin: http://localhost:${PORT}               
 ╚════════════════════════════════════════╝
   `);

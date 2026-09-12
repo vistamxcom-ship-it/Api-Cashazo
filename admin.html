@@ -9421,17 +9421,70 @@ window.guardarPagoICE = function(clienteId) {
     // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
     setTimeout(pullFromServer, 800);
     // Jala cambios de otros dispositivos cada 15s (sincronización "en vivo")
-    setInterval(pullFromServer, 15000);
-    // Respaldo: fuerza guardado cada 15s por si algún cambio no disparó saveNow()
-    setInterval(function(){
-      if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
-    }, 15000);
-    // Sincronizar REDES cada 20s desde el servidor
-    setInterval(async () => {
-      if(srvConnected && typeof loadRedes === 'function') {
-        await loadRedes();
+
+    // ============================================================
+    // 🚀 OPTIMIZACIÓN DE POLLING CRÍTICA — REDUCE 5GB A ~1.25GB/MES
+    // ============================================================
+    // Cambios quirúrgicos para Render Free Tier:
+    const SYNC_CONFIG = {
+      PULL: 60000,      // 60s (era 15s — 4x menos)
+      REDES: 120000,    // 2min (era 20s — 6x menos)
+      DEBOUNCE: 2000    // Agrupar cambios rápidos en 2s
+    };
+    
+    let syncState = { inProgress: false, lastTime: 0 };
+    
+    // Debounce: agrupa múltiples cambios en 1 save
+    function debounceSync() {
+      clearTimeout(window.syncDebounce);
+      window.syncDebounce = setTimeout(() => {
+        if (typeof persist !== 'undefined' && persist.saveNow) {
+          persist.saveNow();
+        }
+      }, SYNC_CONFIG.DEBOUNCE);
+    }
+    
+    // Throttle: evita requests duplicadas < 5s
+    async function syncIfNeeded() {
+      const now = Date.now();
+      if (syncState.inProgress || (now - syncState.lastTime) < 5000) return;
+      
+      syncState.inProgress = true;
+      try {
+        if (typeof pullFromServer === 'function') {
+          await pullFromServer();
+        }
+        syncState.lastTime = now;
+      } catch (e) {
+        console.error('Sync error:', e);
+      } finally {
+        syncState.inProgress = false;
       }
-    }, 20000);
+    }
+    
+    // REEMPLAZA LÍNEAS 9424-9434 DEL ORIGINAL
+    // Carga inicial
+    setTimeout(syncIfNeeded, 800);
+    // Polling cada 60s (4x menos requests)
+    setInterval(syncIfNeeded, SYNC_CONFIG.PULL);
+    // REDES cada 2min (6x menos)
+    setInterval(async () => {
+      if (srvConnected && typeof loadRedes === 'function') {
+        try { await loadRedes(); } catch (e) {}
+      }
+    }, SYNC_CONFIG.REDES);
+    
+    // Event listeners para sync a demanda (cuando el user edita)
+    document.addEventListener('change', debounceSync);
+    document.addEventListener('input', debounceSync);
+    
+    console.log('✅ OPTIMIZACIONES APLICADAS:');
+    console.log('   • Pull interval: 15s → 60s (4x menos)');
+    console.log('   • REDES interval: 20s → 120s (6x menos)');
+    console.log('   • Debounce: agrupa cambios en 2s');
+    console.log('   • Throttle: mínimo 5s entre syncs');
+    console.log('   → Reducción esperada: 75% en requests');
+    console.log('   → Uso en Render Free: ~5GB → ~1.25GB/mes');
   });
 
   // ✅ FUNCIONES NUEVAS PARA LIQUIDACIONES
