@@ -6294,18 +6294,12 @@ function crearBackup(){
 
 /**
  * FUNCIÓN MEJORADA: cargarBackup con FUSIÓN de datos
- * ========================================
- * 
- * Opción 1: FUSIONAR (recomendado)
- *   - Mantiene préstamos existentes
- *   - Añade nuevos préstamos del backup
- *   - Actualiza vendedores
- * 
- * Opción 2: REEMPLAZAR TOTAL (original)
- *   - Borra todo y carga solo el backup
- * 
+ * VERSION 2: SIN STACK OVERFLOW (bug fix)
  * ========================================
  */
+
+// Variable global temporal para almacenar el backup mientras se muestra el diálogo
+let _backupTemp = null;
 
 function cargarBackup(){
   const inp = document.createElement('input');
@@ -6320,8 +6314,9 @@ function cargarBackup(){
         const backup = JSON.parse(event.target.result);
         if(backup.accounts && backup.vendedores){
           
-          // Mostrar diálogo con opciones
-          mostrarDialogoFusion(backup);
+          // Guardar en variable global temporal
+          _backupTemp = backup;
+          mostrarDialogoFusion();
           
         } else {
           alert('❌ Archivo inválido');
@@ -6337,8 +6332,9 @@ function cargarBackup(){
 
 /**
  * Diálogo para elegir modo de carga
+ * NOTA: Usa _backupTemp en lugar de pasar el JSON completo
  */
-function mostrarDialogoFusion(backup) {
+function mostrarDialogoFusion() {
   const modal = document.createElement('div');
   modal.style.cssText = `
     position: fixed;
@@ -6376,8 +6372,7 @@ function mostrarDialogoFusion(backup) {
     <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 1.5rem;">
       
       <!-- OPCIÓN 1: FUSIONAR -->
-      <div onclick="procesarBackupFusion(${JSON.stringify(backup).replace(/"/g, '&quot;')}, 'fusionar', this.closest('[style*=z-index]'))" 
-           style="
+      <div style="
              padding: 1.5rem;
              border: 2px solid var(--grn);
              border-radius: 10px;
@@ -6385,6 +6380,7 @@ function mostrarDialogoFusion(backup) {
              cursor: pointer;
              transition: all 0.2s;
            "
+           onclick="procesarBackupFusion('fusionar')"
            onmouseover="this.style.background='rgba(45,189,130,0.15)'; this.style.transform='scale(1.02)'"
            onmouseout="this.style.background='rgba(45,189,130,0.08)'; this.style.transform='scale(1)'">
         <div style="color: var(--grn); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
@@ -6397,8 +6393,7 @@ function mostrarDialogoFusion(backup) {
       </div>
       
       <!-- OPCIÓN 2: REEMPLAZAR -->
-      <div onclick="procesarBackupFusion(${JSON.stringify(backup).replace(/"/g, '&quot;')}, 'reemplazar', this.closest('[style*=z-index]'))" 
-           style="
+      <div style="
              padding: 1.5rem;
              border: 2px solid var(--amb);
              border-radius: 10px;
@@ -6406,6 +6401,7 @@ function mostrarDialogoFusion(backup) {
              cursor: pointer;
              transition: all 0.2s;
            "
+           onclick="procesarBackupFusion('reemplazar')"
            onmouseover="this.style.background='rgba(212,147,42,0.15)'; this.style.transform='scale(1.02)'"
            onmouseout="this.style.background='rgba(212,147,42,0.08)'; this.style.transform='scale(1)'">
         <div style="color: var(--amb); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
@@ -6419,7 +6415,7 @@ function mostrarDialogoFusion(backup) {
       
     </div>
     
-    <button onclick="this.closest('[style*=z-index]').remove()" 
+    <button onclick="document.querySelector('[style*=z-index]').remove(); _backupTemp=null;" 
             style="
               width: 100%;
               padding: 11px;
@@ -6444,8 +6440,17 @@ function mostrarDialogoFusion(backup) {
 
 /**
  * Procesar la carga del backup según el modo elegido
+ * NOTA: Lee de _backupTemp en lugar de parámetro
  */
-function procesarBackupFusion(backup, modo, modal) {
+function procesarBackupFusion(modo) {
+  if(!_backupTemp) {
+    alert('❌ Error: Backup no encontrado');
+    return;
+  }
+  
+  const backup = _backupTemp;
+  const modal = document.querySelector('[style*=z-index]');
+  
   try {
     if(modo === 'fusionar') {
       // MODO FUSIÓN: Mantener datos existentes + añadir nuevos
@@ -6454,20 +6459,19 @@ function procesarBackupFusion(backup, modo, modal) {
       
       // Mapeo de IDs antiguos a nuevos (para evitar conflictos)
       const mapeoIds = {};
+      const cuentasNuevas = [];
       
       backup.accounts.forEach(acc => {
         // Si el ID ya existe, crear uno nuevo
         if(accs.some(a => a.id === acc.id)) {
-          const nuevoId = maxIdActual + accs.length + 1;
+          const nuevoId = maxIdActual + cuentasNuevas.length + 1;
           mapeoIds[acc.id] = nuevoId;
           acc.id = nuevoId;
         }
+        cuentasNuevas.push(acc);
       });
       
-      // Añadir cuentas nuevas (evitando duplicados)
-      const idsExistentes = new Set(accs.map(a => a.id));
-      const cuentasNuevas = backup.accounts.filter(acc => !idsExistentes.has(acc.id));
-      
+      // Añadir cuentas nuevas
       accs = [...accs, ...cuentasNuevas];
       
       // Fusionar vendedores (actualizar/añadir sin eliminar)
@@ -6487,7 +6491,9 @@ function procesarBackupFusion(backup, modo, modal) {
       renderAll();
       VEND_actualizar();
       
-      modal.remove();
+      if(modal) modal.remove();
+      _backupTemp = null;
+      
       alert(`✅ Datos fusionados\n\n📊 Cuentas añadidas: ${cuentasNuevas.length}\n📋 Total de cuentas: ${accs.length}`);
       
     } else if(modo === 'reemplazar') {
@@ -6504,7 +6510,9 @@ function procesarBackupFusion(backup, modo, modal) {
         renderAll();
         VEND_actualizar();
         
-        modal.remove();
+        if(modal) modal.remove();
+        _backupTemp = null;
+        
         alert('✅ Datos reemplazados completamente');
       }
     }
