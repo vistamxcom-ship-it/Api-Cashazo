@@ -662,7 +662,7 @@ saveData() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accs: accs,
-          vendedores: vendedores,
+          VEND: VEND,
           socios: window.socios || [],
           liquidaciones: window.liquidaciones || [],
           prestamosExpress: window.prestamosExpress || [],
@@ -4244,14 +4244,15 @@ function guardarPago(id){
   }
   
   // GUARDAR A localStorage Y BD
-  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
+  try{localStorage.setItem('accs',JSON.stringify(accs));}catch(e){}
+  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){} // Compatibilidad
   
   // FORZAR GUARDAR EN SUPABASE
   if(persist && persist.saveNow) {
     persist.saveNow();
     console.log('✅ Pago registrado:', tipo, '→', monto, 'para', a.name);
   } else {
-    console.warn('⚠️ persist.saveNow no disponible');
+    console.warn('⚠️ persist.saveNow no disponible, pero guardado en localStorage');
   }
   
   backPane();
@@ -4302,10 +4303,12 @@ window.limpiarMoratoriasDeClientesAlDia = function() {
     console.log(`✅ VERIFICACIÓN: ${clientesArreglados} clientes al día:`);
     lista.forEach(l => console.log(`   ${l}`));
     
+    try { localStorage.setItem('accs', JSON.stringify(accs)); } catch(e) {}
     try { localStorage.setItem('cashazo_accounts', JSON.stringify(accs)); } catch(e) {}
     if (persist && persist.saveNow) persist.saveNow();
     
-    renderAll();
+    // ⚠️ NO LLAMAR renderAll() aquí — renderAll() ya llama a esta función
+    // Hacerlo causaría recursión infinita
   }
   
   return clientesArreglados;
@@ -4419,12 +4422,13 @@ function regRapido(id, tipo){
   }
   
   // GUARDAR A localStorage Y BD
-  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
+  try{localStorage.setItem('accs',JSON.stringify(accs));}catch(e){}
+  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){} // Compatibilidad
   if(persist && persist.saveNow) {
     persist.saveNow();
     console.log('✅ Pago rápido:', tipo, '→', monto, 'para', a.name);
   } else {
-    console.warn('⚠️ persist.saveNow no disponible');
+    console.warn('⚠️ persist.saveNow no disponible, pero guardado en localStorage');
   }
   renderHoy();renderAll();
 }
@@ -6292,15 +6296,6 @@ function crearBackup(){
   alert('✅ Backup descargado');
 }
 
-/**
- * FUNCIÓN MEJORADA: cargarBackup con FUSIÓN de datos
- * VERSION 2: SIN STACK OVERFLOW (bug fix)
- * ========================================
- */
-
-// Variable global temporal para almacenar el backup mientras se muestra el diálogo
-let _backupTemp = null;
-
 function cargarBackup(){
   const inp = document.createElement('input');
   inp.type = 'file';
@@ -6313,11 +6308,16 @@ function cargarBackup(){
       try {
         const backup = JSON.parse(event.target.result);
         if(backup.accounts && backup.vendedores){
-          
-          // Guardar en variable global temporal
-          _backupTemp = backup;
-          mostrarDialogoFusion();
-          
+          if(confirm('⚠️ Reemplazará todos tus datos. ¿Continuar?')){
+            accs = backup.accounts;
+            VEND = backup.vendedores;
+            nxtId = backup.settings?.nextId || 1000;
+            localStorage.setItem('accs', JSON.stringify(accs));
+            localStorage.setItem('VEND_data', JSON.stringify(VEND));
+            renderAll();
+            VEND_actualizar();
+            alert('✅ Datos restaurados');
+          }
         } else {
           alert('❌ Archivo inválido');
         }
@@ -6328,197 +6328,6 @@ function cargarBackup(){
     reader.readAsText(file);
   };
   inp.click();
-}
-
-/**
- * Diálogo para elegir modo de carga
- * NOTA: Usa _backupTemp en lugar de pasar el JSON completo
- */
-function mostrarDialogoFusion() {
-  const modal = document.createElement('div');
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  `;
-  
-  const box = document.createElement('div');
-  box.style.cssText = `
-    background: var(--bg2);
-    border: 2px solid var(--brd2);
-    border-radius: 14px;
-    padding: 2.5rem;
-    max-width: 500px;
-    color: var(--t1);
-    font-family: var(--head);
-  `;
-  
-  box.innerHTML = `
-    <h2 style="margin-top: 0; color: var(--t1); margin-bottom: 1rem; font-size: 18px;">
-      ⚠️ Modo de restauración
-    </h2>
-    
-    <p style="color: var(--t2); font-size: 13px; line-height: 1.8; margin-bottom: 1.5rem;">
-      Elige cómo cargar este backup:
-    </p>
-    
-    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 1.5rem;">
-      
-      <!-- OPCIÓN 1: FUSIONAR -->
-      <div style="
-             padding: 1.5rem;
-             border: 2px solid var(--grn);
-             border-radius: 10px;
-             background: rgba(45,189,130,0.08);
-             cursor: pointer;
-             transition: all 0.2s;
-           "
-           onclick="procesarBackupFusion('fusionar')"
-           onmouseover="this.style.background='rgba(45,189,130,0.15)'; this.style.transform='scale(1.02)'"
-           onmouseout="this.style.background='rgba(45,189,130,0.08)'; this.style.transform='scale(1)'">
-        <div style="color: var(--grn); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
-          ✓ FUSIONAR datos
-        </div>
-        <div style="color: var(--t3); font-size: 12px; line-height: 1.6;">
-          Mantiene tus préstamos actuales + añade los del backup
-          <br><strong>Mejor para:</strong> Integrar nuevos datos sin perder lo existente
-        </div>
-      </div>
-      
-      <!-- OPCIÓN 2: REEMPLAZAR -->
-      <div style="
-             padding: 1.5rem;
-             border: 2px solid var(--amb);
-             border-radius: 10px;
-             background: rgba(212,147,42,0.08);
-             cursor: pointer;
-             transition: all 0.2s;
-           "
-           onclick="procesarBackupFusion('reemplazar')"
-           onmouseover="this.style.background='rgba(212,147,42,0.15)'; this.style.transform='scale(1.02)'"
-           onmouseout="this.style.background='rgba(212,147,42,0.08)'; this.style.transform='scale(1)'">
-        <div style="color: var(--amb); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
-          ⟲ REEMPLAZAR todo
-        </div>
-        <div style="color: var(--t3); font-size: 12px; line-height: 1.6;">
-          Elimina todos tus datos y carga solo el backup
-          <br><strong>Mejor para:</strong> Restauración completa de backup antiguo
-        </div>
-      </div>
-      
-    </div>
-    
-    <button onclick="document.querySelector('[style*=z-index]').remove(); _backupTemp=null;" 
-            style="
-              width: 100%;
-              padding: 11px;
-              background: var(--brd2);
-              color: var(--t2);
-              border: 1px solid var(--brd);
-              border-radius: 8px;
-              cursor: pointer;
-              font-size: 12px;
-              font-weight: 600;
-              transition: all 0.2s;
-            "
-            onmouseover="this.style.background='var(--brd)'; this.style.color='var(--t1)'"
-            onmouseout="this.style.background='var(--brd2)'; this.style.color='var(--t2)'">
-      Cancelar
-    </button>
-  `;
-  
-  modal.appendChild(box);
-  document.body.appendChild(modal);
-}
-
-/**
- * Procesar la carga del backup según el modo elegido
- * NOTA: Lee de _backupTemp en lugar de parámetro
- */
-function procesarBackupFusion(modo) {
-  if(!_backupTemp) {
-    alert('❌ Error: Backup no encontrado');
-    return;
-  }
-  
-  const backup = _backupTemp;
-  const modal = document.querySelector('[style*=z-index]');
-  
-  try {
-    if(modo === 'fusionar') {
-      // MODO FUSIÓN: Mantener datos existentes + añadir nuevos
-      
-      const maxIdActual = accs.length > 0 ? Math.max(...accs.map(a => a.id)) : 999;
-      
-      // Mapeo de IDs antiguos a nuevos (para evitar conflictos)
-      const mapeoIds = {};
-      const cuentasNuevas = [];
-      
-      backup.accounts.forEach(acc => {
-        // Si el ID ya existe, crear uno nuevo
-        if(accs.some(a => a.id === acc.id)) {
-          const nuevoId = maxIdActual + cuentasNuevas.length + 1;
-          mapeoIds[acc.id] = nuevoId;
-          acc.id = nuevoId;
-        }
-        cuentasNuevas.push(acc);
-      });
-      
-      // Añadir cuentas nuevas
-      accs = [...accs, ...cuentasNuevas];
-      
-      // Fusionar vendedores (actualizar/añadir sin eliminar)
-      VEND = {
-        ...VEND,
-        ...backup.vendedores
-      };
-      
-      // Actualizar nextId
-      const maxId = Math.max(...accs.map(a => a.id));
-      nxtId = Math.max(backup.settings?.nextId || 1000, maxId + 1);
-      
-      // Guardar
-      localStorage.setItem('accs', JSON.stringify(accs));
-      localStorage.setItem('VEND_data', JSON.stringify(VEND));
-      
-      renderAll();
-      VEND_actualizar();
-      
-      if(modal) modal.remove();
-      _backupTemp = null;
-      
-      alert(`✅ Datos fusionados\n\n📊 Cuentas añadidas: ${cuentasNuevas.length}\n📋 Total de cuentas: ${accs.length}`);
-      
-    } else if(modo === 'reemplazar') {
-      // MODO REEMPLAZO: Limpiar todo y cargar backup
-      
-      if(confirm('⚠️ Se eliminarán TODOS tus datos actuales.\n¿Estás seguro?')) {
-        accs = backup.accounts;
-        VEND = backup.vendedores;
-        nxtId = backup.settings?.nextId || 1000;
-        
-        localStorage.setItem('accs', JSON.stringify(accs));
-        localStorage.setItem('VEND_data', JSON.stringify(VEND));
-        
-        renderAll();
-        VEND_actualizar();
-        
-        if(modal) modal.remove();
-        _backupTemp = null;
-        
-        alert('✅ Datos reemplazados completamente');
-      }
-    }
-  } catch(err) {
-    alert('❌ Error al procesar: ' + err.message);
-  }
 }
 
 function mostrarBackupUI(){
@@ -9591,6 +9400,27 @@ window.guardarPagoICE = function(clienteId) {
   })();
 
   window.addEventListener('load', function(){
+    // ✅ CARGAR DATOS LOCALES PRIMERO (antes de conectar al servidor)
+    const savedAccs = localStorage.getItem('accs');
+    if(savedAccs) {
+      try {
+        accs = JSON.parse(savedAccs);
+        console.log('✅ Cuentas cargadas de localStorage:', accs.length, 'registros');
+      } catch(e) {
+        console.error('❌ Error cargando accs de localStorage:', e);
+      }
+    }
+    
+    const savedVend = localStorage.getItem('VEND_data');
+    if(savedVend) {
+      try {
+        VEND = JSON.parse(savedVend);
+        console.log('✅ Vendedores cargados de localStorage');
+      } catch(e) {
+        console.error('❌ Error cargando VEND:', e);
+      }
+    }
+    
     // ✅ PRIMERO: Verificar conexión al servidor (con protección)
     if(typeof checkServer === 'function') {
       try {
