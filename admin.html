@@ -6292,6 +6292,21 @@ function crearBackup(){
   alert('✅ Backup descargado');
 }
 
+/**
+ * FUNCIÓN MEJORADA: cargarBackup con FUSIÓN de datos
+ * ========================================
+ * 
+ * Opción 1: FUSIONAR (recomendado)
+ *   - Mantiene préstamos existentes
+ *   - Añade nuevos préstamos del backup
+ *   - Actualiza vendedores
+ * 
+ * Opción 2: REEMPLAZAR TOTAL (original)
+ *   - Borra todo y carga solo el backup
+ * 
+ * ========================================
+ */
+
 function cargarBackup(){
   const inp = document.createElement('input');
   inp.type = 'file';
@@ -6304,16 +6319,10 @@ function cargarBackup(){
       try {
         const backup = JSON.parse(event.target.result);
         if(backup.accounts && backup.vendedores){
-          if(confirm('⚠️ Reemplazará todos tus datos. ¿Continuar?')){
-            accs = backup.accounts;
-            VEND = backup.vendedores;
-            nxtId = backup.settings?.nextId || 1000;
-            localStorage.setItem('accs', JSON.stringify(accs));
-            localStorage.setItem('VEND_data', JSON.stringify(VEND));
-            renderAll();
-            VEND_actualizar();
-            alert('✅ Datos restaurados');
-          }
+          
+          // Mostrar diálogo con opciones
+          mostrarDialogoFusion(backup);
+          
         } else {
           alert('❌ Archivo inválido');
         }
@@ -6324,6 +6333,184 @@ function cargarBackup(){
     reader.readAsText(file);
   };
   inp.click();
+}
+
+/**
+ * Diálogo para elegir modo de carga
+ */
+function mostrarDialogoFusion(backup) {
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+  
+  const box = document.createElement('div');
+  box.style.cssText = `
+    background: var(--bg2);
+    border: 2px solid var(--brd2);
+    border-radius: 14px;
+    padding: 2.5rem;
+    max-width: 500px;
+    color: var(--t1);
+    font-family: var(--head);
+  `;
+  
+  box.innerHTML = `
+    <h2 style="margin-top: 0; color: var(--t1); margin-bottom: 1rem; font-size: 18px;">
+      ⚠️ Modo de restauración
+    </h2>
+    
+    <p style="color: var(--t2); font-size: 13px; line-height: 1.8; margin-bottom: 1.5rem;">
+      Elige cómo cargar este backup:
+    </p>
+    
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 1.5rem;">
+      
+      <!-- OPCIÓN 1: FUSIONAR -->
+      <div onclick="procesarBackupFusion(${JSON.stringify(backup).replace(/"/g, '&quot;')}, 'fusionar', this.closest('[style*=z-index]'))" 
+           style="
+             padding: 1.5rem;
+             border: 2px solid var(--grn);
+             border-radius: 10px;
+             background: rgba(45,189,130,0.08);
+             cursor: pointer;
+             transition: all 0.2s;
+           "
+           onmouseover="this.style.background='rgba(45,189,130,0.15)'; this.style.transform='scale(1.02)'"
+           onmouseout="this.style.background='rgba(45,189,130,0.08)'; this.style.transform='scale(1)'">
+        <div style="color: var(--grn); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
+          ✓ FUSIONAR datos
+        </div>
+        <div style="color: var(--t3); font-size: 12px; line-height: 1.6;">
+          Mantiene tus préstamos actuales + añade los del backup
+          <br><strong>Mejor para:</strong> Integrar nuevos datos sin perder lo existente
+        </div>
+      </div>
+      
+      <!-- OPCIÓN 2: REEMPLAZAR -->
+      <div onclick="procesarBackupFusion(${JSON.stringify(backup).replace(/"/g, '&quot;')}, 'reemplazar', this.closest('[style*=z-index]'))" 
+           style="
+             padding: 1.5rem;
+             border: 2px solid var(--amb);
+             border-radius: 10px;
+             background: rgba(212,147,42,0.08);
+             cursor: pointer;
+             transition: all 0.2s;
+           "
+           onmouseover="this.style.background='rgba(212,147,42,0.15)'; this.style.transform='scale(1.02)'"
+           onmouseout="this.style.background='rgba(212,147,42,0.08)'; this.style.transform='scale(1)'">
+        <div style="color: var(--amb); font-weight: 700; margin-bottom: 4px; font-size: 14px;">
+          ⟲ REEMPLAZAR todo
+        </div>
+        <div style="color: var(--t3); font-size: 12px; line-height: 1.6;">
+          Elimina todos tus datos y carga solo el backup
+          <br><strong>Mejor para:</strong> Restauración completa de backup antiguo
+        </div>
+      </div>
+      
+    </div>
+    
+    <button onclick="this.closest('[style*=z-index]').remove()" 
+            style="
+              width: 100%;
+              padding: 11px;
+              background: var(--brd2);
+              color: var(--t2);
+              border: 1px solid var(--brd);
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 12px;
+              font-weight: 600;
+              transition: all 0.2s;
+            "
+            onmouseover="this.style.background='var(--brd)'; this.style.color='var(--t1)'"
+            onmouseout="this.style.background='var(--brd2)'; this.style.color='var(--t2)'">
+      Cancelar
+    </button>
+  `;
+  
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+}
+
+/**
+ * Procesar la carga del backup según el modo elegido
+ */
+function procesarBackupFusion(backup, modo, modal) {
+  try {
+    if(modo === 'fusionar') {
+      // MODO FUSIÓN: Mantener datos existentes + añadir nuevos
+      
+      const maxIdActual = accs.length > 0 ? Math.max(...accs.map(a => a.id)) : 999;
+      
+      // Mapeo de IDs antiguos a nuevos (para evitar conflictos)
+      const mapeoIds = {};
+      
+      backup.accounts.forEach(acc => {
+        // Si el ID ya existe, crear uno nuevo
+        if(accs.some(a => a.id === acc.id)) {
+          const nuevoId = maxIdActual + accs.length + 1;
+          mapeoIds[acc.id] = nuevoId;
+          acc.id = nuevoId;
+        }
+      });
+      
+      // Añadir cuentas nuevas (evitando duplicados)
+      const idsExistentes = new Set(accs.map(a => a.id));
+      const cuentasNuevas = backup.accounts.filter(acc => !idsExistentes.has(acc.id));
+      
+      accs = [...accs, ...cuentasNuevas];
+      
+      // Fusionar vendedores (actualizar/añadir sin eliminar)
+      VEND = {
+        ...VEND,
+        ...backup.vendedores
+      };
+      
+      // Actualizar nextId
+      const maxId = Math.max(...accs.map(a => a.id));
+      nxtId = Math.max(backup.settings?.nextId || 1000, maxId + 1);
+      
+      // Guardar
+      localStorage.setItem('accs', JSON.stringify(accs));
+      localStorage.setItem('VEND_data', JSON.stringify(VEND));
+      
+      renderAll();
+      VEND_actualizar();
+      
+      modal.remove();
+      alert(`✅ Datos fusionados\n\n📊 Cuentas añadidas: ${cuentasNuevas.length}\n📋 Total de cuentas: ${accs.length}`);
+      
+    } else if(modo === 'reemplazar') {
+      // MODO REEMPLAZO: Limpiar todo y cargar backup
+      
+      if(confirm('⚠️ Se eliminarán TODOS tus datos actuales.\n¿Estás seguro?')) {
+        accs = backup.accounts;
+        VEND = backup.vendedores;
+        nxtId = backup.settings?.nextId || 1000;
+        
+        localStorage.setItem('accs', JSON.stringify(accs));
+        localStorage.setItem('VEND_data', JSON.stringify(VEND));
+        
+        renderAll();
+        VEND_actualizar();
+        
+        modal.remove();
+        alert('✅ Datos reemplazados completamente');
+      }
+    }
+  } catch(err) {
+    alert('❌ Error al procesar: ' + err.message);
+  }
 }
 
 function mostrarBackupUI(){
