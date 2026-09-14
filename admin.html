@@ -662,7 +662,7 @@ saveData() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accs: accs,
-          VEND: VEND,
+          vendedores: vendedores,
           socios: window.socios || [],
           liquidaciones: window.liquidaciones || [],
           prestamosExpress: window.prestamosExpress || [],
@@ -2393,69 +2393,9 @@ function renderLiq(){
   const liq = window.liquidaciones || [];
   const totLiq = liq.reduce((s,l) => s + (l.monto || 0), 0);
   
-  // ✅ OBTENER CUENTAS ACTIVAS EN LIQUIDACIÓN (CLT)
-  const cuentasEnLiq = accs.filter(a => a.type === 'liquidacion' && a.status !== 'liquidado');
-  const totCapitalPendiente = cuentasEnLiq.reduce((s,c) => s + (c.amt || 0), 0);
-  const totMoraAcumulada = cuentasEnLiq.reduce((s,c) => s + (c.moraAcumulada || 0), 0);
-  const totDeudaReal = cuentasEnLiq.reduce((s,c) => s + ((c.amt - (c.pagosRealizados || 0)) + (c.moraAcumulada || 0)), 0);
-  
   // Calcular liquidaciones por estado de cuenta
   const liquidadasManuales = liq.filter(l => l.tipo === 'manual');
   const liquidadasAuto = liq.filter(l => l.tipo !== 'manual');
-  
-  // TABLA DE CUENTAS ACTIVAS EN LIQUIDACIÓN
-  let tablaCuentasEnLiq = '';
-  if(cuentasEnLiq.length > 0) {
-    tablaCuentasEnLiq = `
-      <div class="sec" onclick="toggleSection(this)">
-        <span class="sec-toggle">▼</span>
-        Cuentas Activas en Liquidación (${cuentasEnLiq.length})
-      </div>
-      <div class="sec-content" style="margin-bottom:1.5rem">
-        <div class="mrow">
-          <div class="mc"><div class="mc-l">Capital Pendiente</div><div class="mc-v" style="color:var(--grn)">${fm(totCapitalPendiente,'MXN')}</div></div>
-          <div class="mc"><div class="mc-l">Mora Acumulada</div><div class="mc-v" style="color:var(--red)">${fm(totMoraAcumulada,'MXN')}</div></div>
-          <div class="mc"><div class="mc-l">Deuda Real Total</div><div class="mc-v" style="color:var(--amb)">${fm(totDeudaReal,'MXN')}</div></div>
-        </div>
-        <div class="tcard">
-          <table>
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Capital</th>
-                <th>Pagado</th>
-                <th>Deuda Principal</th>
-                <th>Mora Acum</th>
-                <th>Total Adeudado</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${cuentasEnLiq.map((c,idx) => {
-                const deudaPrincipal = c.amt - (c.pagosRealizados || 0);
-                const moraAcum = c.moraAcumulada || 0;
-                const totalAdeudado = deudaPrincipal + moraAcum;
-                return `<tr>
-                  <td><strong>${c.name}</strong></td>
-                  <td style="font-family:var(--mono)">${fm(c.amt,'MXN')}</td>
-                  <td style="font-family:var(--mono);color:var(--grn)">${fm(c.pagosRealizados || 0,'MXN')}</td>
-                  <td style="font-family:var(--mono);color:var(--amb)">${fm(deudaPrincipal,'MXN')}</td>
-                  <td style="font-family:var(--mono);color:var(--red);font-weight:600">${fm(moraAcum,'MXN')}</td>
-                  <td style="font-family:var(--mono);font-weight:700;color:var(--red)">${fm(totalAdeudado,'MXN')}</td>
-                  <td><span class="bx ${c.status==='activo'?'bx-g':'bx-r'}">${c.status.toUpperCase()}</span></td>
-                  <td>
-                    <button class="bg" onclick="editarCuentaLiq('${c.id}')" style="font-size:9px;padding:4px 8px">✏️</button>
-                    <button class="br" onclick="marcarLiquidada('${c.id}')" style="font-size:9px;padding:4px 8px">✓</button>
-                  </td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  }
   
   document.getElementById('pane-liq').innerHTML = `
     <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-bottom:1rem">// liquidaciones — manuales y automáticas del backup</div>
@@ -2469,7 +2409,6 @@ function renderLiq(){
       <button class="bg" onclick="abrirFormLiquidacion()">+ REGISTRAR LIQUIDACIÓN</button>
       <button class="bs" onclick="cargarDelBackup()" style="margin-left:8px">📂 Cargar del Backup</button>
     </div>
-    ${tablaCuentasEnLiq}
     <div class="sec" onclick="toggleSection(this)">
       <span class="sec-toggle">▼</span>
       Historial de Liquidaciones
@@ -3517,7 +3456,7 @@ function openPerfil(id){
     <div class="tld">${h.fecha}</div>
     <div class="tlt" style="display:flex;align-items:center;gap:6px">
       ${h.tipo==='total'?'PAGO TOTAL':h.tipo==='interes'?'PAGO MENSUAL':'ABONO'} — ${fm(h.monto,a.cur)}
-      <button onclick="eliminarPago('${id}',${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px;padding:0 2px" title="Eliminar">✕</button>
+      <button onclick="eliminarPago('${id},${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:10px;padding:0 2px" title="Eliminar">✕</button>
     </div>
   </div>`).join(''):'<p style="font-size:10px;color:var(--t3);font-family:var(--mono)">// sin historial</p>';
 
@@ -4102,14 +4041,12 @@ function eliminarPago(accId, idx){
   }
   
   // Guardar cambios
-  try { localStorage.setItem('cashazo_accounts',JSON.stringify(accs)); } catch(e) {}
-  if(typeof persist !== 'undefined' && persist.saveNow) {
+  if(typeof persist !== 'undefined') {
     persist.saveNow();
   }
   
   openPerfil(accId);
   renderAll();
-  alert('✓ Pago eliminado correctamente');
 }
 
 // Array para guardar el historial de clientes eliminados
@@ -4244,15 +4181,14 @@ function guardarPago(id){
   }
   
   // GUARDAR A localStorage Y BD
-  try{localStorage.setItem('accs',JSON.stringify(accs));}catch(e){}
-  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){} // Compatibilidad
+  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
   
   // FORZAR GUARDAR EN SUPABASE
   if(persist && persist.saveNow) {
     persist.saveNow();
     console.log('✅ Pago registrado:', tipo, '→', monto, 'para', a.name);
   } else {
-    console.warn('⚠️ persist.saveNow no disponible, pero guardado en localStorage');
+    console.warn('⚠️ persist.saveNow no disponible');
   }
   
   backPane();
@@ -4303,12 +4239,10 @@ window.limpiarMoratoriasDeClientesAlDia = function() {
     console.log(`✅ VERIFICACIÓN: ${clientesArreglados} clientes al día:`);
     lista.forEach(l => console.log(`   ${l}`));
     
-    try { localStorage.setItem('accs', JSON.stringify(accs)); } catch(e) {}
     try { localStorage.setItem('cashazo_accounts', JSON.stringify(accs)); } catch(e) {}
     if (persist && persist.saveNow) persist.saveNow();
     
-    // ⚠️ NO LLAMAR renderAll() aquí — renderAll() ya llama a esta función
-    // Hacerlo causaría recursión infinita
+    renderAll();
   }
   
   return clientesArreglados;
@@ -4422,13 +4356,12 @@ function regRapido(id, tipo){
   }
   
   // GUARDAR A localStorage Y BD
-  try{localStorage.setItem('accs',JSON.stringify(accs));}catch(e){}
-  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){} // Compatibilidad
+  try{localStorage.setItem('cashazo_accounts',JSON.stringify(accs));}catch(e){}
   if(persist && persist.saveNow) {
     persist.saveNow();
     console.log('✅ Pago rápido:', tipo, '→', monto, 'para', a.name);
   } else {
-    console.warn('⚠️ persist.saveNow no disponible, pero guardado en localStorage');
+    console.warn('⚠️ persist.saveNow no disponible');
   }
   renderHoy();renderAll();
 }
@@ -9400,27 +9333,6 @@ window.guardarPagoICE = function(clienteId) {
   })();
 
   window.addEventListener('load', function(){
-    // ✅ CARGAR DATOS LOCALES PRIMERO (antes de conectar al servidor)
-    const savedAccs = localStorage.getItem('accs');
-    if(savedAccs) {
-      try {
-        accs = JSON.parse(savedAccs);
-        console.log('✅ Cuentas cargadas de localStorage:', accs.length, 'registros');
-      } catch(e) {
-        console.error('❌ Error cargando accs de localStorage:', e);
-      }
-    }
-    
-    const savedVend = localStorage.getItem('VEND_data');
-    if(savedVend) {
-      try {
-        VEND = JSON.parse(savedVend);
-        console.log('✅ Vendedores cargados de localStorage');
-      } catch(e) {
-        console.error('❌ Error cargando VEND:', e);
-      }
-    }
-    
     // ✅ PRIMERO: Verificar conexión al servidor (con protección)
     if(typeof checkServer === 'function') {
       try {
@@ -9446,70 +9358,17 @@ window.guardarPagoICE = function(clienteId) {
     // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
     setTimeout(pullFromServer, 800);
     // Jala cambios de otros dispositivos cada 15s (sincronización "en vivo")
-
-    // ============================================================
-    // 🚀 OPTIMIZACIÓN DE POLLING CRÍTICA — REDUCE 5GB A ~1.25GB/MES
-    // ============================================================
-    // Cambios quirúrgicos para Render Free Tier:
-    const SYNC_CONFIG = {
-      PULL: 60000,      // 60s (era 15s — 4x menos)
-      REDES: 120000,    // 2min (era 20s — 6x menos)
-      DEBOUNCE: 2000    // Agrupar cambios rápidos en 2s
-    };
-    
-    let syncState = { inProgress: false, lastTime: 0 };
-    
-    // Debounce: agrupa múltiples cambios en 1 save
-    function debounceSync() {
-      clearTimeout(window.syncDebounce);
-      window.syncDebounce = setTimeout(() => {
-        if (typeof persist !== 'undefined' && persist.saveNow) {
-          persist.saveNow();
-        }
-      }, SYNC_CONFIG.DEBOUNCE);
-    }
-    
-    // Throttle: evita requests duplicadas < 5s
-    async function syncIfNeeded() {
-      const now = Date.now();
-      if (syncState.inProgress || (now - syncState.lastTime) < 5000) return;
-      
-      syncState.inProgress = true;
-      try {
-        if (typeof pullFromServer === 'function') {
-          await pullFromServer();
-        }
-        syncState.lastTime = now;
-      } catch (e) {
-        console.error('Sync error:', e);
-      } finally {
-        syncState.inProgress = false;
-      }
-    }
-    
-    // REEMPLAZA LÍNEAS 9424-9434 DEL ORIGINAL
-    // Carga inicial
-    setTimeout(syncIfNeeded, 800);
-    // Polling cada 60s (4x menos requests)
-    setInterval(syncIfNeeded, SYNC_CONFIG.PULL);
-    // REDES cada 2min (6x menos)
+    setInterval(pullFromServer, 15000);
+    // Respaldo: fuerza guardado cada 15s por si algún cambio no disparó saveNow()
+    setInterval(function(){
+      if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
+    }, 15000);
+    // Sincronizar REDES cada 20s desde el servidor
     setInterval(async () => {
-      if (srvConnected && typeof loadRedes === 'function') {
-        try { await loadRedes(); } catch (e) {}
+      if(srvConnected && typeof loadRedes === 'function') {
+        await loadRedes();
       }
-    }, SYNC_CONFIG.REDES);
-    
-    // Event listeners para sync a demanda (cuando el user edita)
-    document.addEventListener('change', debounceSync);
-    document.addEventListener('input', debounceSync);
-    
-    console.log('✅ OPTIMIZACIONES APLICADAS:');
-    console.log('   • Pull interval: 15s → 60s (4x menos)');
-    console.log('   • REDES interval: 20s → 120s (6x menos)');
-    console.log('   • Debounce: agrupa cambios en 2s');
-    console.log('   • Throttle: mínimo 5s entre syncs');
-    console.log('   → Reducción esperada: 75% en requests');
-    console.log('   → Uso en Render Free: ~5GB → ~1.25GB/mes');
+    }, 20000);
   });
 
   // ✅ FUNCIONES NUEVAS PARA LIQUIDACIONES
@@ -10025,54 +9884,6 @@ window.guardarPagoICE = function(clienteId) {
     if(document.getElementById('pane-pex')) renderPEX();
     if(document.getElementById('pane-ice')) renderICE();
   }, 500);
-
-  // ✅ FUNCIONES PARA GESTIONAR CUENTAS EN LIQUIDACIÓN
-  window.editarCuentaLiq = function(cuentaId) {
-    const cuenta = accs.find(a => a.type === 'liquidacion' && a.id === cuentaId);
-    if(!cuenta) return alert('Cuenta no encontrada');
-    
-    const nuevoMora = prompt(`Actualizar mora acumulada para ${cuenta.name}\nValor actual: $${(cuenta.moraAcumulada || 0).toLocaleString('es-MX', {minimumFractionDigits:2})}`, (cuenta.moraAcumulada || 0).toString());
-    if(nuevoMora === null) return;
-    
-    const monto = parseFloat(nuevoMora);
-    if(isNaN(monto)) return alert('Valor inválido');
-    
-    cuenta.moraAcumulada = monto;
-    if(typeof persist !== 'undefined') persist.saveNow();
-    try { localStorage.setItem('cashazo_accounts', JSON.stringify(accs)); } catch(e) {}
-    renderLiq();
-    alert('✓ Mora actualizada');
-  };
-  
-  window.marcarLiquidada = function(cuentaId) {
-    const cuenta = accs.find(a => a.type === 'liquidacion' && a.id === cuentaId);
-    if(!cuenta) return;
-    
-    const totalAdeudado = (cuenta.amt - (cuenta.pagosRealizados || 0)) + (cuenta.moraAcumulada || 0);
-    if(confirm(`¿Marcar como LIQUIDADA?\n\nCliente: ${cuenta.name}\nTotal adeudado: $${totalAdeudado.toLocaleString('es-MX', {minimumFractionDigits:2})}`)) {
-      cuenta.status = 'liquidado';
-      
-      // Guardar en historial de liquidaciones
-      const hoy = new Date();
-      const fechaLiq = `${hoy.getDate().toString().padStart(2,'0')}/${(hoy.getMonth()+1).toString().padStart(2,'0')}/${hoy.getFullYear()}`;
-      if(!window.liquidaciones) window.liquidaciones = [];
-      window.liquidaciones.push({
-        fecha: fechaLiq,
-        cliente: cuenta.name,
-        monto: totalAdeudado,
-        tipo: 'manual',
-        notas: `CLT — Capital: $${cuenta.amt}, Pagado: $${cuenta.pagosRealizados || 0}, Mora: $${cuenta.moraAcumulada || 0}`,
-        timestamp: hoy.getTime()
-      });
-      
-      if(typeof persist !== 'undefined') persist.saveNow();
-      try { localStorage.setItem('cashazo_accounts', JSON.stringify(accs)); } catch(e) {}
-      try { localStorage.setItem('cashazo_liquidaciones', JSON.stringify(window.liquidaciones)); } catch(e) {}
-      
-      renderLiq();
-      alert('✓ Cuenta marcada como liquidada');
-    }
-  };
 
   console.log('✅ Sincronización en vivo con Supabase activada (cada 15s)');
 })();
