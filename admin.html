@@ -9357,18 +9357,31 @@ window.guardarPagoICE = function(clienteId) {
     
     // Carga inicial: jala lo que haya en Supabase (por si otro dispositivo hizo cambios)
     setTimeout(pullFromServer, 800);
-    // Jala cambios de otros dispositivos cada 15s (sincronización "en vivo")
-    setInterval(pullFromServer, 15000);
-    // Respaldo: fuerza guardado cada 15s por si algún cambio no disparó saveNow()
-    setInterval(function(){
-      if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
-    }, 15000);
-    // Sincronizar REDES cada 20s desde el servidor
-    setInterval(async () => {
-      if(srvConnected && typeof loadRedes === 'function') {
-        await loadRedes();
-      }
-    }, 20000);
+    
+    // ❌ COMENTADO: Estos setInterval MASIVOS mataban el ancho de banda en Render Free
+    // 15 segundos = 240 requests/hora = 5,760 requests/día ≈ miles de GB/mes
+    // Los datos YA están en localStorage, no necesitas polling constante.
+    
+    // ✅ FIX INTELIGENTE: Sincronización ON-DEMAND
+    // • Cuando agregas/editas/pagas una cuenta → saveNow() ya llama a /sync
+    // • Cuando cargas la app → pullFromServer() ya jala desde Supabase
+    // • NO necesitas jalar cada 15 segundos si no hay cambios
+    
+    // SI necesitas que OTROS dispositivos vean cambios en TIEMPO REAL,
+    // descomenta ESTO (5 minutos es aceptable para Render Free):
+    // setInterval(pullFromServer, 5 * 60 * 1000); // 5 minutos
+    
+    // // Respaldo: guardar cambios que puedan haberse perdido (cada 5 min)
+    // setInterval(function(){
+    //   if(typeof persist !== 'undefined' && persist.saveNow) persist.saveNow();
+    // }, 5 * 60 * 1000);
+    
+    // // Sincronizar REDES cada 5 minutos desde el servidor
+    // setInterval(async () => {
+    //   if(srvConnected && typeof loadRedes === 'function') {
+    //     await loadRedes();
+    //   }
+    // }, 5 * 60 * 1000);
   });
 
   // ✅ FUNCIONES NUEVAS PARA LIQUIDACIONES
